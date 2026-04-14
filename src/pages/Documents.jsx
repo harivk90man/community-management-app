@@ -156,67 +156,56 @@ function DocumentCard({ doc: d, canDelete, onDelete, deleting }) {
 }
 
 function DocOpenModal({ doc: d, onClose }) {
-  const [loading, setLoading] = useState(true)
-  const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(d.file_url)}&embedded=true`
-
-  function handleDownload() {
-    const link = document.createElement('a')
-    link.href = d.file_url
-    link.download = d.title
-    link.click()
+  // _system opens the OS default browser on Capacitor (Android/iOS) and
+  // behaves like _blank on web — neither route touches this app's WebView,
+  // so the session stays alive and the page stays responsive.
+  function handleOpen() {
+    window.open(d.file_url, '_system')
+    onClose()
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-white">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-sm">
 
-      {/* Header bar */}
-      <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-gray-100 shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
-            <FileIcon className="w-4 h-4 text-gray-500" />
+        {/* Header */}
+        <div className="flex items-start gap-3 px-5 pt-5 pb-4 border-b border-gray-100">
+          <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center shrink-0">
+            <FileIcon className="w-5 h-5 text-gray-400" />
           </div>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-gray-900 truncate">{d.title}</p>
-            <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-gray-900 text-sm leading-snug">{d.title}</p>
+            <span className={`inline-block mt-1 px-2 py-0.5 text-xs font-medium rounded-full
               ${CAT_STYLE[d.category] ?? 'bg-gray-100 text-gray-600'}`}>
               {d.category}
             </span>
+            {d.uploaded_by && (
+              <p className="text-xs text-gray-400 mt-1">{d.uploaded_by} · {fmtDate(d.created_at)}</p>
+            )}
           </div>
+          <button onClick={onClose}
+            className="p-1 text-gray-400 hover:text-gray-600 transition shrink-0">
+            <XIcon className="w-4 h-4" />
+          </button>
         </div>
-        <div className="flex items-center gap-2 shrink-0 ml-3">
+
+        {/* Actions */}
+        <div className="px-5 py-5 space-y-2.5">
           <button
-            onClick={handleDownload}
-            title="Download"
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold
-                       bg-green-600 hover:bg-green-700 text-white rounded-lg transition">
-            <DownloadIcon className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Download</span>
+            onClick={handleOpen}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl
+                       bg-green-600 hover:bg-green-700 text-white text-sm font-semibold transition">
+            <ExternalLinkIcon className="w-4 h-4" />
+            Open Document
           </button>
           <button
             onClick={onClose}
-            title="Close"
-            className="p-1.5 rounded-lg text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition">
-            <XIcon className="w-5 h-5" />
+            className="w-full px-4 py-2 text-sm font-medium text-gray-500
+                       hover:text-gray-700 transition">
+            Cancel
           </button>
         </div>
-      </div>
-
-      {/* Viewer area */}
-      <div className="flex-1 relative bg-gray-100">
-        {loading && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-gray-50">
-            <span className="w-8 h-8 border-2 border-green-500 border-t-transparent
-                             rounded-full animate-spin" />
-            <p className="text-sm text-gray-500">Loading document…</p>
-          </div>
-        )}
-        <iframe
-          src={viewerUrl}
-          title={d.title}
-          className="w-full h-full border-0"
-          onLoad={() => setLoading(false)}
-          allow="autoplay"
-        />
       </div>
     </div>
   )
@@ -386,9 +375,4 @@ function ExternalLinkIcon({ className }) {
   return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
       d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-}
-function DownloadIcon({ className }) {
-  return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
 }
