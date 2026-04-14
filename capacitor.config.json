@@ -1,0 +1,9 @@
+{
+  "appId": "com.ashirvadh.castlerock",
+  "appName": "Ashirvadh Castle Rock",
+  "webDir": "dist",
+  "server": {
+    "url": "https://community-management-app-phi.vercel.app",
+    "cleartext": true
+  }
+}

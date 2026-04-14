@@ -124,6 +124,10 @@ export default function LoginPage() {
             New resident?{' '}
             <Link to="/signup" className="text-green-700 font-medium hover:underline">Sign up</Link>
           </p>
+
+          <p className="text-center text-xs text-gray-400 mt-5">
+            Built with ❤️ by Hariharan
+          </p>
         </div>
 
         <p className="text-center text-xs text-gray-400 mt-6">

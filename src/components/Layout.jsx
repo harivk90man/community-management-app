@@ -71,6 +71,11 @@ export default function Layout() {
           )}
         </nav>
 
+        {/* Branding credit */}
+        <div className="px-4 pb-2">
+          <p className="text-xs text-gray-400 text-center">Built by Hariharan · v1.0</p>
+        </div>
+
         {/* User footer */}
         <div className="border-t border-gray-100 px-4 py-4">
           <div className="flex items-center gap-3 min-w-0">
