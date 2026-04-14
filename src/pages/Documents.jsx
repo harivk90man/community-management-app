@@ -156,14 +156,6 @@ function DocumentCard({ doc: d, canDelete, onDelete, deleting }) {
 }
 
 function DocOpenModal({ doc: d, onClose }) {
-  // _system opens the OS default browser on Capacitor (Android/iOS) and
-  // behaves like _blank on web — neither route touches this app's WebView,
-  // so the session stays alive and the page stays responsive.
-  function handleOpen() {
-    window.open(d.file_url, '_system')
-    onClose()
-  }
-
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
@@ -192,13 +184,20 @@ function DocOpenModal({ doc: d, onClose }) {
 
         {/* Actions */}
         <div className="px-5 py-5 space-y-2.5">
-          <button
-            onClick={handleOpen}
+          {/* Native <a> tag — browser handles navigation with no JS blocking.
+              onClick closes the modal; the browser then opens the link.
+              noopener,noreferrer prevents the new tab from touching this
+              tab's localStorage/session. */}
+          <a
+            href={d.file_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={onClose}
             className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl
                        bg-green-600 hover:bg-green-700 text-white text-sm font-semibold transition">
             <ExternalLinkIcon className="w-4 h-4" />
             Open Document
-          </button>
+          </a>
           <button
             onClick={onClose}
             className="w-full px-4 py-2 text-sm font-medium text-gray-500
