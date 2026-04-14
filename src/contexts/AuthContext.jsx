@@ -87,9 +87,25 @@ export function AuthProvider({ children }) {
       }
     )
 
+    // Step 3: re-check session when the user returns to this tab.
+    // Prevents the app from appearing "frozen" when another tab invalidated
+    // the session (e.g. a document opened with noopener that briefly touched
+    // localStorage, or the session expired while the tab was in the background).
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          if (!session) {
+            window.location.href = '/login'
+          }
+        })
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
     return () => {
       cancelled = true
       subscription.unsubscribe()
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [])
 

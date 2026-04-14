@@ -129,11 +129,12 @@ function DocumentCard({ doc: d, canDelete, onDelete, deleting }) {
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <a href={d.file_url} target="_blank" rel="noopener noreferrer"
+        <button
+          onClick={() => window.open(d.file_url, '_blank', 'noopener,noreferrer')}
           className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold
                      bg-green-50 text-green-700 hover:bg-green-100 rounded-lg transition">
           <ExternalLinkIcon className="w-3.5 h-3.5" /> Open
-        </a>
+        </button>
         {canDelete && (
           <button onClick={onDelete} disabled={deleting}
             className="px-3 py-2 text-xs font-medium text-red-600 border border-red-200

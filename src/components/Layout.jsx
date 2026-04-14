@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -21,11 +22,22 @@ const BOARD_ONLY_ITEMS = [
   { to: '/analytics',   label: 'Analytics',   icon: AnalyticsIcon },
 ]
 
+// Bottom nav shows 5 most-used pages (icons only on mobile)
+const BOTTOM_NAV = [
+  { to: '/',              label: 'Dashboard',     icon: HomeIcon },
+  { to: '/villas',        label: 'Villas',        icon: BuildingIcon },
+  { to: '/payments',      label: 'Payments',      icon: CurrencyIcon },
+  { to: '/complaints',    label: 'Complaints',    icon: FlagIcon },
+  { to: '/announcements', label: 'Announcements', icon: MegaphoneIcon },
+]
+
 export default function Layout() {
   const { villa, role, logout } = useAuth()
   const navigate = useNavigate()
+  const [drawerOpen, setDrawerOpen] = useState(false)
 
   async function handleLogout() {
+    setDrawerOpen(false)
     await logout()
     navigate('/login', { replace: true })
   }
@@ -33,19 +45,14 @@ export default function Layout() {
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
 
-      {/* ── Sidebar ── */}
-      <aside className="w-64 flex flex-col bg-white border-r border-gray-100 shrink-0">
+      {/* ── Desktop Sidebar (hidden on mobile) ── */}
+      <aside className="hidden md:flex w-64 flex-col bg-white border-r border-gray-100 shrink-0">
 
-        {/* Logo / association name */}
+        {/* Logo */}
         <div className="px-5 py-5 border-b border-gray-100">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-green-600 flex items-center justify-center shrink-0">
-              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M9 22V12h6v10" />
-              </svg>
+              <HouseIcon className="w-5 h-5 text-white" />
             </div>
             <div className="min-w-0">
               <p className="text-sm font-bold text-gray-900 leading-tight truncate">Ashirvadh</p>
@@ -59,7 +66,6 @@ export default function Layout() {
           {NAV_ITEMS.map(item => (
             <SidebarLink key={item.to} {...item} />
           ))}
-
           {role === 'board' && (
             <>
               <div className="px-3 pt-4 pb-1">
@@ -72,7 +78,7 @@ export default function Layout() {
           )}
         </nav>
 
-        {/* Branding credit */}
+        {/* Branding */}
         <div className="px-4 pb-2">
           <p className="text-xs text-gray-400 text-center">Built by Hariharan · v1.0</p>
         </div>
@@ -97,10 +103,25 @@ export default function Layout() {
       <div className="flex-1 flex flex-col min-w-0">
 
         {/* Top bar */}
-        <header className="h-14 bg-white border-b border-gray-100 flex items-center justify-between px-6 shrink-0">
-          <div />
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-500 hidden sm:block">
+        <header className="h-14 bg-white border-b border-gray-100 flex items-center justify-between px-4 md:px-6 shrink-0">
+
+          {/* Mobile: logo + name */}
+          <div className="flex items-center gap-2.5 md:hidden">
+            <div className="w-8 h-8 rounded-lg bg-green-600 flex items-center justify-center shrink-0">
+              <HouseIcon className="w-4 h-4 text-white" />
+            </div>
+            <div className="leading-tight">
+              <p className="text-sm font-bold text-gray-900">Ashirvadh</p>
+              <p className="text-xs text-gray-400">Castle Rock</p>
+            </div>
+          </div>
+
+          {/* Desktop: empty left placeholder */}
+          <div className="hidden md:block" />
+
+          {/* Desktop right: user info + sign out */}
+          <div className="hidden md:flex items-center gap-4">
+            <span className="text-sm text-gray-500">
               {villa?.owner_name ?? ''}{villa ? ` · Villa ${villa.villa_number}` : ''}
               {role === 'board' && (
                 <span className="ml-2 px-2 py-0.5 text-xs font-medium bg-green-100 text-green-700 rounded-full">
@@ -116,16 +137,128 @@ export default function Layout() {
               <span>Sign out</span>
             </button>
           </div>
+
+          {/* Mobile: hamburger button */}
+          <button
+            onClick={() => setDrawerOpen(true)}
+            className="md:hidden p-1.5 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition"
+            aria-label="Open menu"
+          >
+            <MenuIcon className="w-5 h-5" />
+          </button>
         </header>
 
-        {/* Page content */}
-        <main className="flex-1 overflow-y-auto">
+        {/* Page content — extra bottom padding on mobile to clear the bottom nav */}
+        <main className="flex-1 overflow-y-auto pb-16 md:pb-0">
           <Outlet />
         </main>
       </div>
+
+      {/* ── Mobile Drawer ── */}
+      {drawerOpen && (
+        <div className="fixed inset-0 z-50 md:hidden">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => setDrawerOpen(false)}
+          />
+
+          {/* Drawer panel */}
+          <div className="absolute left-0 top-0 bottom-0 w-72 bg-white shadow-2xl flex flex-col">
+
+            {/* Drawer header: logo + close */}
+            <div className="flex items-center justify-between px-4 py-4 border-b border-gray-100">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-green-600 flex items-center justify-center shrink-0">
+                  <HouseIcon className="w-5 h-5 text-white" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-gray-900 leading-tight">Ashirvadh</p>
+                  <p className="text-xs text-gray-400 leading-tight">Castle Rock Association</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setDrawerOpen(false)}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition"
+                aria-label="Close menu"
+              >
+                <XIcon className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* User info */}
+            <div className="px-4 py-3 bg-green-50 border-b border-green-100">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-green-600 flex items-center justify-center shrink-0">
+                  <span className="text-sm font-bold text-white">
+                    {villa?.owner_name?.[0]?.toUpperCase() ?? '?'}
+                  </span>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-900 truncate">
+                    {villa?.owner_name ?? 'Resident'}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    Villa {villa?.villa_number ?? '—'}
+                    {role === 'board' && (
+                      <span className="ml-1.5 px-1.5 py-0.5 text-xs font-medium bg-green-200 text-green-800 rounded-full">
+                        Board
+                      </span>
+                    )}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Nav links */}
+            <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
+              {NAV_ITEMS.map(item => (
+                <DrawerLink key={item.to} {...item} onClose={() => setDrawerOpen(false)} />
+              ))}
+              {role === 'board' && (
+                <>
+                  <div className="px-3 pt-4 pb-1">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Board</p>
+                  </div>
+                  {BOARD_ONLY_ITEMS.map(item => (
+                    <DrawerLink key={item.to} {...item} onClose={() => setDrawerOpen(false)} />
+                  ))}
+                </>
+              )}
+            </nav>
+
+            {/* Branding + sign out */}
+            <div className="border-t border-gray-100">
+              <div className="px-4 pt-2 pb-1">
+                <p className="text-xs text-gray-400 text-center">Built by Hariharan · v1.0</p>
+              </div>
+              <div className="px-3 pb-4">
+                <button
+                  onClick={handleLogout}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg
+                             text-sm font-medium text-red-600 hover:bg-red-50 transition"
+                >
+                  <LogoutIcon className="w-4 h-4 shrink-0" />
+                  Sign out
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Mobile Bottom Navigation ── */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200
+                      md:hidden flex items-stretch h-16">
+        {BOTTOM_NAV.map(item => (
+          <BottomNavItem key={item.to} {...item} />
+        ))}
+      </nav>
     </div>
   )
 }
+
+// ── Link components ────────────────────────────────────────────────────────────
 
 function SidebarLink({ to, label, icon: Icon }) {
   return (
@@ -146,8 +279,68 @@ function SidebarLink({ to, label, icon: Icon }) {
   )
 }
 
-// ── Inline icon components ─────────────────────────────────
+function DrawerLink({ to, label, icon: Icon, onClose }) {
+  return (
+    <NavLink
+      to={to}
+      end={to === '/'}
+      onClick={onClose}
+      className={({ isActive }) =>
+        `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+          isActive
+            ? 'bg-green-50 text-green-700'
+            : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+        }`
+      }
+    >
+      <Icon className="w-4 h-4 shrink-0" />
+      <span>{label}</span>
+    </NavLink>
+  )
+}
 
+function BottomNavItem({ to, label, icon: Icon }) {
+  return (
+    <NavLink
+      to={to}
+      end={to === '/'}
+      className={({ isActive }) =>
+        `flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
+          isActive ? 'text-green-600' : 'text-gray-400 hover:text-gray-600'
+        }`
+      }
+    >
+      <Icon className="w-5 h-5 shrink-0" />
+      <span className="text-[10px] font-medium">{label}</span>
+    </NavLink>
+  )
+}
+
+// ── Icons ──────────────────────────────────────────────────────────────────────
+
+function HouseIcon({ className }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+        d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 22V12h6v10" />
+    </svg>
+  )
+}
+function MenuIcon({ className }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+    </svg>
+  )
+}
+function XIcon({ className }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+    </svg>
+  )
+}
 function HomeIcon({ className }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
