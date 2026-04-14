@@ -27,3 +27,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+.vercel
+
+# Capacitor / Android build output
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties

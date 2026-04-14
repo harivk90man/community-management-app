@@ -9,6 +9,7 @@ import Villas from './pages/Villas'
 import Payments from './pages/Payments'
 import Complaints from './pages/Complaints'
 import Announcements from './pages/Announcements'
+import BoardMembers from './pages/BoardMembers'
 import Documents from './pages/Documents'
 import Visitors from './pages/Visitors'
 import Vendors from './pages/Vendors'
@@ -40,7 +41,8 @@ export default function App() {
             <Route path="villas"        element={<Villas />} />
             <Route path="payments"      element={<Payments />} />
             <Route path="complaints"    element={<Complaints />} />
-            <Route path="announcements" element={<Announcements />} />
+            <Route path="announcements"  element={<Announcements />} />
+            <Route path="board-members" element={<BoardMembers />} />
             <Route path="documents"     element={<Documents />} />
             <Route path="visitors"      element={<Visitors />} />
             <Route path="vendors"       element={<Vendors />} />
