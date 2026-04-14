@@ -156,84 +156,67 @@ function DocumentCard({ doc: d, canDelete, onDelete, deleting }) {
 }
 
 function DocOpenModal({ doc: d, onClose }) {
-  const [copied, setCopied] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(d.file_url)}&embedded=true`
 
-  async function handleCopy() {
-    try {
-      await navigator.clipboard.writeText(d.file_url)
-    } catch {
-      // Fallback for browsers that block clipboard without HTTPS
-      const el = document.createElement('textarea')
-      el.value = d.file_url
-      document.body.appendChild(el)
-      el.select()
-      document.execCommand('copy')
-      document.body.removeChild(el)
-    }
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2500)
-  }
-
-  function handleOpenInBrowser() {
-    window.open(d.file_url, '_blank', 'noopener,noreferrer')
-    onClose()
+  function handleDownload() {
+    const link = document.createElement('a')
+    link.href = d.file_url
+    link.download = d.title
+    link.click()
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-sm">
+    <div className="fixed inset-0 z-50 flex flex-col bg-white">
 
-        {/* Header */}
-        <div className="px-5 pt-5 pb-4 border-b border-gray-100">
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center shrink-0 mt-0.5">
-              <FileIcon className="w-5 h-5 text-gray-400" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-semibold text-gray-900 text-sm leading-snug">{d.title}</p>
-              <span className={`inline-block mt-1 px-2 py-0.5 text-xs font-medium rounded-full
-                ${CAT_STYLE[d.category] ?? 'bg-gray-100 text-gray-600'}`}>
-                {d.category}
-              </span>
-            </div>
-            <button onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 transition shrink-0 mt-0.5">
-              <XIcon className="w-4 h-4" />
-            </button>
+      {/* Header bar */}
+      <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-gray-100 shrink-0">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
+            <FileIcon className="w-4 h-4 text-gray-500" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-gray-900 truncate">{d.title}</p>
+            <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full
+              ${CAT_STYLE[d.category] ?? 'bg-gray-100 text-gray-600'}`}>
+              {d.category}
+            </span>
           </div>
         </div>
-
-        {/* URL preview */}
-        <div className="px-5 py-3 bg-gray-50 mx-5 mt-4 rounded-lg">
-          <p className="text-xs text-gray-400 truncate">{d.file_url}</p>
-        </div>
-
-        {/* Actions */}
-        <div className="px-5 py-5 space-y-2.5">
+        <div className="flex items-center gap-2 shrink-0 ml-3">
           <button
-            onClick={handleCopy}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl
-                       border border-gray-200 text-sm font-medium text-gray-700
-                       hover:bg-gray-50 transition">
-            {copied
-              ? <><CheckIcon className="w-4 h-4 text-green-600" /><span className="text-green-700">Link copied!</span></>
-              : <><CopyIcon className="w-4 h-4" />Copy Link</>}
-          </button>
-          <button
-            onClick={handleOpenInBrowser}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl
-                       bg-green-600 hover:bg-green-700 text-white text-sm font-semibold transition">
-            <ExternalLinkIcon className="w-4 h-4" />
-            Open in Browser
+            onClick={handleDownload}
+            title="Download"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold
+                       bg-green-600 hover:bg-green-700 text-white rounded-lg transition">
+            <DownloadIcon className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Download</span>
           </button>
           <button
             onClick={onClose}
-            className="w-full px-4 py-2 text-sm font-medium text-gray-500
-                       hover:text-gray-700 transition">
-            Cancel
+            title="Close"
+            className="p-1.5 rounded-lg text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition">
+            <XIcon className="w-5 h-5" />
           </button>
         </div>
+      </div>
+
+      {/* Viewer area */}
+      <div className="flex-1 relative bg-gray-100">
+        {loading && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-gray-50">
+            <span className="w-8 h-8 border-2 border-green-500 border-t-transparent
+                             rounded-full animate-spin" />
+            <p className="text-sm text-gray-500">Loading document…</p>
+          </div>
+        )}
+        <iframe
+          src={viewerUrl}
+          title={d.title}
+          className="w-full h-full border-0"
+          onLoad={() => setLoading(false)}
+          allow="autoplay"
+        />
       </div>
     </div>
   )
@@ -404,12 +387,8 @@ function ExternalLinkIcon({ className }) {
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
       d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
 }
-function CopyIcon({ className }) {
+function DownloadIcon({ className }) {
   return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-      d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-}
-function CheckIcon({ className }) {
-  return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
 }
