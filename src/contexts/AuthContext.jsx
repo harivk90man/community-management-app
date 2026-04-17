@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 
 const AuthContext = createContext(null)
@@ -75,47 +75,58 @@ export function AuthProvider({ children }) {
           return
         }
 
-        // SIGNED_IN, TOKEN_REFRESHED, USER_UPDATED — refresh user + villa profile
+        // SIGNED_IN — full profile reload needed
+        // TOKEN_REFRESHED — user didn't change, just update the user object
         setUser(session?.user ?? null)
-        if (session?.user?.email) {
+        if (event === 'SIGNED_IN' && session?.user?.email) {
           await loadVillaProfile(session.user.email)
-        } else {
-          setVilla(null)
-          setRole(null)
         }
         setLoading(false)
       }
     )
 
-    // Step 3: silently refresh the session when the user returns to this tab.
-    // Uses getSession() to re-validate the token — if expired, Supabase auto-refreshes it.
-    // No hard redirects here; the onAuthStateChange listener handles SIGNED_OUT naturally.
-    function handleVisibilityChange() {
-      if (document.visibilityState === 'visible') {
-        supabase.auth.getSession()
+    // Step 3: silently refresh the session when the user returns after being away.
+    // Only fires if the tab was hidden for at least 60 seconds — avoids unnecessary
+    // getSession() calls (and the TOKEN_REFRESHED re-render cascade they trigger)
+    // on quick tab switches or document views.
+    let hiddenAt = 0
+    function handleVisibility() {
+      if (document.visibilityState === 'hidden') {
+        hiddenAt = Date.now()
+      } else if (document.visibilityState === 'visible' && hiddenAt > 0) {
+        const away = Date.now() - hiddenAt
+        hiddenAt = 0
+        // Only refresh if away > 60 seconds — short switches don't need it
+        if (away > 60_000) {
+          supabase.auth.getSession()
+        }
       }
     }
-    document.addEventListener('visibilitychange', handleVisibilityChange)
+    document.addEventListener('visibilitychange', handleVisibility)
 
     return () => {
       cancelled = true
       subscription.unsubscribe()
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      document.removeEventListener('visibilitychange', handleVisibility)
     }
   }, [])
 
-  async function login(email, password) {
+  const login = useCallback(async (email, password) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) throw error
     return data
-  }
+  }, [])
 
-  async function logout() {
+  const logout = useCallback(async () => {
     const { error } = await supabase.auth.signOut()
     if (error) throw error
-  }
+  }, [])
 
-  const value = { user, villa, role, loading, login, logout }
+  // Memoize so consumers don't re-render unless actual values change
+  const value = useMemo(
+    () => ({ user, villa, role, loading, login, logout }),
+    [user, villa, role, loading, login, logout]
+  )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

@@ -39,6 +39,7 @@ export default function Documents() {
   const [docs, setDocs]         = useState([])
   const [loading, setLoading]   = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const [showUrlForm, setShowUrlForm] = useState(false)
   const [viewing, setViewing]   = useState(null)   // doc being viewed in-app
   const [confirmDel, setConfirmDel] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
@@ -124,7 +125,11 @@ export default function Documents() {
       )}
 
       {showForm && (
-        <UploadDocumentModal user={user} onSuccess={onSuccess} onClose={() => setShowForm(false)} />
+        <UploadDocumentModal user={user} onSuccess={onSuccess} onClose={() => setShowForm(false)}
+          onFallbackUrl={() => { setShowForm(false); setShowUrlForm(true) }} />
+      )}
+      {showUrlForm && (
+        <AddByUrlModal user={user} onSuccess={onSuccess} onClose={() => setShowUrlForm(false)} />
       )}
       {viewing && (
         <DocumentViewer doc={viewing} onClose={() => setViewing(null)} />
@@ -297,7 +302,7 @@ function DocumentViewer({ doc, onClose }) {
 
 // ─── upload modal ────────────────────────────────────────────────────────────
 
-function UploadDocumentModal({ user, onSuccess, onClose }) {
+function UploadDocumentModal({ user, onSuccess, onClose, onFallbackUrl }) {
   const [title, setTitle]       = useState('')
   const [category, setCategory] = useState('Circular')
   const [uploadedBy, setUploadedBy] = useState(user?.email ?? '')
@@ -344,7 +349,15 @@ function UploadDocumentModal({ user, onSuccess, onClose }) {
           upsert: false,
         })
 
-      if (uploadErr) throw uploadErr
+      if (uploadErr) {
+        // Specific help for missing bucket
+        if (uploadErr.message?.includes('not found') || uploadErr.message?.includes('Bucket')) {
+          throw new Error(
+            'Storage bucket "documents" not found. Go to Supabase Dashboard → Storage → New Bucket → name it "documents" (public).'
+          )
+        }
+        throw uploadErr
+      }
       setProgress(70)
 
       // 2. Get the public URL for backward compatibility
@@ -362,7 +375,15 @@ function UploadDocumentModal({ user, onSuccess, onClose }) {
         uploaded_by: uploadedBy.trim() || null,
       })
 
-      if (dbErr) throw dbErr
+      if (dbErr) {
+        // If DB insert fails (missing columns), give specific guidance
+        if (dbErr.message?.includes('storage_path') || dbErr.message?.includes('file_name')) {
+          throw new Error(
+            'Database needs new columns. Run in Supabase SQL Editor: ALTER TABLE documents ADD COLUMN IF NOT EXISTS storage_path TEXT, ADD COLUMN IF NOT EXISTS file_name TEXT, ADD COLUMN IF NOT EXISTS file_size BIGINT, ADD COLUMN IF NOT EXISTS file_type TEXT;'
+          )
+        }
+        throw dbErr
+      }
       setProgress(100)
       onSuccess()
     } catch (err) {
@@ -440,6 +461,65 @@ function UploadDocumentModal({ user, onSuccess, onClose }) {
         )}
 
         <ModalFooter saving={saving} label="Upload" onCancel={onClose} />
+
+        {onFallbackUrl && (
+          <button type="button" onClick={onFallbackUrl}
+            className="w-full mt-2 text-xs text-gray-400 hover:text-gray-600 transition text-center">
+            Or add by URL instead
+          </button>
+        )}
+      </form>
+    </Modal>
+  )
+}
+
+// ─── add by URL fallback ─────────────────────────────────────────────────────
+
+function AddByUrlModal({ user, onSuccess, onClose }) {
+  const [form, setForm] = useState({ title: '', file_url: '', category: 'Circular', uploaded_by: user?.email ?? '' })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  function set(k, v) { setForm(p => ({ ...p, [k]: v })) }
+
+  async function handleSubmit(e) {
+    e.preventDefault(); setError('')
+    setSaving(true)
+    try {
+      const { error: err } = await supabase.from('documents').insert({
+        title: form.title.trim(), file_url: form.file_url.trim(),
+        category: form.category, uploaded_by: form.uploaded_by.trim() || null,
+      })
+      if (err) throw err
+      onSuccess()
+    } catch (err) { setError(err.message ?? 'Failed to save.') } finally { setSaving(false) }
+  }
+
+  return (
+    <Modal title="Add Document (URL)" onClose={onClose}>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {error && <ErrorBox msg={error} />}
+        <Field label="Title" required>
+          <input type="text" required value={form.title}
+            onChange={e => set('title', e.target.value)} placeholder="Document title" className={inputCls} />
+        </Field>
+        <Field label="File URL" required>
+          <input type="url" required value={form.file_url}
+            onChange={e => set('file_url', e.target.value)}
+            placeholder="https://drive.google.com/…" className={inputCls} />
+        </Field>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Category">
+            <select value={form.category} onChange={e => set('category', e.target.value)} className={inputCls}>
+              {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+            </select>
+          </Field>
+          <Field label="Uploaded By">
+            <input type="text" value={form.uploaded_by}
+              onChange={e => set('uploaded_by', e.target.value)} placeholder="Your name" className={inputCls} />
+          </Field>
+        </div>
+        <ModalFooter saving={saving} label="Add Document" onCancel={onClose} />
       </form>
     </Modal>
   )

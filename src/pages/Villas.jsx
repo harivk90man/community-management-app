@@ -55,8 +55,11 @@ function BoardView() {
 
   async function toggleActive(v) {
     setTogglingId(v.id)
-    await supabase.from('villas').update({ is_active: !v.is_active }).eq('id', v.id)
-    setVillas(prev => prev.map(x => x.id === v.id ? { ...x, is_active: !x.is_active } : x))
+    try {
+      const { error } = await supabase.from('villas').update({ is_active: !v.is_active }).eq('id', v.id)
+      if (error) throw error
+      setVillas(prev => prev.map(x => x.id === v.id ? { ...x, is_active: !x.is_active } : x))
+    } catch { /* silently fail */ }
     setTogglingId(null)
   }
 
@@ -319,7 +322,7 @@ function VillaFormModal({ editing, onSaved, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={saving ? undefined : onClose} />
 
       <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh]
                       overflow-y-auto flex flex-col">
@@ -327,7 +330,7 @@ function VillaFormModal({ editing, onSaved, onClose }) {
           <h2 className="text-lg font-semibold text-gray-900">
             {isEdit ? 'Edit Villa' : 'Add Villa'}
           </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition">
+          <button onClick={saving ? undefined : onClose} className="text-gray-400 hover:text-gray-600 transition">
             <XIcon className="w-5 h-5" />
           </button>
         </div>
