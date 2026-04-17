@@ -10,4 +10,13 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: true,
     multiTab: true,
   },
+  realtime: {
+    params: {
+      eventsPerSecond: 2,     // rate-limit to prevent flood
+    },
+  },
+  // Disable the global Realtime auto-connect — we only use REST polling
+  global: {
+    headers: {},
+  },
 })

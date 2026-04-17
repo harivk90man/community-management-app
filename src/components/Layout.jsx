@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useRealtime } from '../contexts/RealtimeContext'
 import GlobalSearch from './GlobalSearch'
+import ErrorBoundary from './ErrorBoundary'
 
 const NAV_ITEMS = [
   { to: '/',               label: 'Dashboard',          icon: HomeIcon },
@@ -165,7 +166,9 @@ export default function Layout() {
 
         {/* Page content — extra bottom padding on mobile to clear the bottom nav */}
         <main className="flex-1 overflow-y-auto pb-16 md:pb-0">
-          <Outlet />
+          <ErrorBoundary>
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
 
