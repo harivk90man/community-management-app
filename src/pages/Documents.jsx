@@ -226,9 +226,9 @@ function DocumentViewer({ doc, onClose }) {
   const canEmbed = isViewableInBrowser(ext)
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-black/60 backdrop-blur-sm">
-      {/* Header bar */}
-      <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-gray-200 shrink-0">
+    <div className="fixed inset-0 z-50 flex flex-col bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      {/* Header bar — stop propagation so clicking inside doesn't close */}
+      <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-gray-200 shrink-0" onClick={e => e.stopPropagation()}>
         <div className="flex items-center gap-3 min-w-0">
           <span className={`px-2 py-0.5 text-xs font-medium rounded-full
             ${CAT_STYLE[doc.category] ?? 'bg-gray-100 text-gray-600'}`}>{doc.category}</span>
@@ -253,8 +253,8 @@ function DocumentViewer({ doc, onClose }) {
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-auto flex items-center justify-center p-4">
+      {/* Content — clicking the document itself doesn't close, only the dark area around it */}
+      <div className="flex-1 overflow-auto flex items-center justify-center p-4" onClick={e => e.stopPropagation()}>
         {loading ? (
           <div className="flex flex-col items-center gap-3">
             <span className="w-8 h-8 border-3 border-green-500 border-t-transparent rounded-full animate-spin" />
