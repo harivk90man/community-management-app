@@ -108,8 +108,11 @@ function BoardView() {
 
   async function handleDelete(c) {
     setDeletingId(c.id)
-    await supabase.from('complaints').delete().eq('id', c.id)
-    setComplaints(prev => prev.filter(x => x.id !== c.id))
+    try {
+      const { error } = await supabase.from('complaints').delete().eq('id', c.id)
+      if (error) throw error
+      setComplaints(prev => prev.filter(x => x.id !== c.id))
+    } catch { /* item stays in list */ }
     setDeletingId(null)
     setConfirmDel(null)
   }
@@ -948,14 +951,15 @@ function EmptyState({ message, children }) {
 function ConfirmModal({ message, loading, onConfirm, onCancel }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onCancel} />
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={loading ? undefined : onCancel} />
       <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
         <p className="text-sm text-gray-800 font-medium mb-5">{message}</p>
         <div className="flex justify-end gap-3">
           <button
             onClick={onCancel}
+            disabled={loading}
             className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-200
-                       hover:border-gray-300 rounded-lg transition"
+                       hover:border-gray-300 rounded-lg transition disabled:opacity-50"
           >
             Cancel
           </button>

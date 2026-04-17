@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import {
@@ -34,11 +33,6 @@ function expMonth(d) { return d ? new Date(d + 'T00:00:00').getMonth() + 1 : nul
 
 export default function Analytics() {
   const { role, user } = useAuth()
-  const navigate = useNavigate()
-
-  useEffect(() => {
-    if (role && role !== 'board') navigate('/', { replace: true })
-  }, [role, navigate])
 
   const now = new Date()
   const [yearFilter, setYearFilter] = useState(String(now.getFullYear()))
@@ -65,7 +59,6 @@ export default function Analytics() {
 
   useEffect(() => { load() }, [load])
 
-  if (role !== 'board') return null
   if (loading) return <LoadingSkeleton />
 
   return (
@@ -96,12 +89,14 @@ export default function Analytics() {
         <IncomeExpenseChart payments={payments} expenses={expenses} yearFilter={yearFilter} />
       </ChartSection>
 
-      {/* 3 — Defaulters */}
-      <DefaultersSection
-        payments={payments} villas={villas}
-        monthlyDue={monthlyDue} user={user}
-        onPaymentAdded={p => setPayments(prev => [...prev, p])}
-      />
+      {/* 3 — Defaulters (board-only — residents see financial overview but not individual defaulter data) */}
+      {role === 'board' && (
+        <DefaultersSection
+          payments={payments} villas={villas}
+          monthlyDue={monthlyDue} user={user}
+          onPaymentAdded={p => setPayments(prev => [...prev, p])}
+        />
+      )}
 
       {/* 4 — Expenses by category */}
       <ChartSection

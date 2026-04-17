@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { supabase } from '../lib/supabase'
 
 const NAV_ITEMS = [
   { to: '/',               label: 'Dashboard',          icon: HomeIcon },
@@ -14,12 +15,12 @@ const NAV_ITEMS = [
   { to: '/vendors',        label: 'Vendors',            icon: BriefcaseIcon },
   { to: '/emergency',      label: 'Emergency Contacts', icon: PhoneIcon },
   { to: '/polls',          label: 'Polls',              icon: ChartIcon },
+  { to: '/analytics',     label: 'Analytics',          icon: AnalyticsIcon },
 ]
 
 const BOARD_ONLY_ITEMS = [
   { to: '/expenses',    label: 'Expenses',    icon: ReceiptIcon },
   { to: '/dues-config', label: 'Dues Config', icon: CogIcon },
-  { to: '/analytics',   label: 'Analytics',   icon: AnalyticsIcon },
 ]
 
 // Bottom nav shows 5 most-used pages (icons only on mobile)
@@ -35,6 +36,25 @@ export default function Layout() {
   const { villa, role, logout } = useAuth()
   const navigate = useNavigate()
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [badges, setBadges] = useState({ complaints: 0, announcements: 0 })
+
+  useEffect(() => {
+    async function fetchBadges() {
+      const [{ count: pendingComplaints }, { count: activeAnnouncements }] = await Promise.all([
+        supabase.from('complaints').select('*', { count: 'exact', head: true }).eq('status', 'Pending'),
+        supabase.from('announcements').select('*', { count: 'exact', head: true })
+          .in('audience', ['All', 'Owners'])
+          .or(`ends_at.is.null,ends_at.gte.${new Date().toISOString()}`),
+      ])
+      setBadges({
+        complaints: pendingComplaints ?? 0,
+        announcements: activeAnnouncements ?? 0,
+      })
+    }
+    fetchBadges()
+    const interval = setInterval(fetchBadges, 60000)
+    return () => clearInterval(interval)
+  }, [])
 
   async function handleLogout() {
     setDrawerOpen(false)
@@ -64,7 +84,9 @@ export default function Layout() {
         {/* Nav links */}
         <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
           {NAV_ITEMS.map(item => (
-            <SidebarLink key={item.to} {...item} />
+            <SidebarLink key={item.to} {...item}
+              badge={item.to === '/complaints' ? badges.complaints
+                   : item.to === '/announcements' ? badges.announcements : 0} />
           ))}
           {role === 'board' && (
             <>
@@ -213,7 +235,9 @@ export default function Layout() {
             {/* Nav links */}
             <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
               {NAV_ITEMS.map(item => (
-                <DrawerLink key={item.to} {...item} onClose={() => setDrawerOpen(false)} />
+                <DrawerLink key={item.to} {...item} onClose={() => setDrawerOpen(false)}
+                  badge={item.to === '/complaints' ? badges.complaints
+                       : item.to === '/announcements' ? badges.announcements : 0} />
               ))}
               {role === 'board' && (
                 <>
@@ -260,7 +284,7 @@ export default function Layout() {
 
 // ── Link components ────────────────────────────────────────────────────────────
 
-function SidebarLink({ to, label, icon: Icon }) {
+function SidebarLink({ to, label, icon: Icon, badge = 0 }) {
   return (
     <NavLink
       to={to}
@@ -274,12 +298,17 @@ function SidebarLink({ to, label, icon: Icon }) {
       }
     >
       <Icon className="w-4 h-4 shrink-0" />
-      <span>{label}</span>
+      <span className="flex-1">{label}</span>
+      {badge > 0 && (
+        <span className="ml-auto px-1.5 py-0.5 text-xs font-bold bg-red-500 text-white rounded-full min-w-[20px] text-center">
+          {badge > 99 ? '99+' : badge}
+        </span>
+      )}
     </NavLink>
   )
 }
 
-function DrawerLink({ to, label, icon: Icon, onClose }) {
+function DrawerLink({ to, label, icon: Icon, onClose, badge = 0 }) {
   return (
     <NavLink
       to={to}
@@ -294,7 +323,12 @@ function DrawerLink({ to, label, icon: Icon, onClose }) {
       }
     >
       <Icon className="w-4 h-4 shrink-0" />
-      <span>{label}</span>
+      <span className="flex-1">{label}</span>
+      {badge > 0 && (
+        <span className="ml-auto px-1.5 py-0.5 text-xs font-bold bg-red-500 text-white rounded-full min-w-[20px] text-center">
+          {badge > 99 ? '99+' : badge}
+        </span>
+      )}
     </NavLink>
   )
 }

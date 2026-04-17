@@ -48,11 +48,11 @@ export default function App() {
             <Route path="vendors"       element={<Vendors />} />
             <Route path="emergency"     element={<EmergencyContacts />} />
             <Route path="polls"         element={<Polls />} />
+            <Route path="analytics"     element={<Analytics />} />
 
             {/* Board-only routes */}
             <Route path="expenses"      element={<Expenses />} />
             <Route path="dues-config"   element={<DuesConfig />} />
-            <Route path="analytics"     element={<Analytics />} />
           </Route>
 
           {/* Fallback */}

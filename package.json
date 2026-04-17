@@ -7,13 +7,17 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "mobile:sync": "npx cap sync android",
+    "mobile:build": "vite build && npx cap sync android",
+    "mobile:open": "npx cap open android"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.0",
     "@capacitor/cli": "^8.3.0",
     "@capacitor/core": "^8.3.0",
     "@supabase/supabase-js": "^2.103.0",
+    "razorpay": "^2.9.6",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-router-dom": "^7.14.0",

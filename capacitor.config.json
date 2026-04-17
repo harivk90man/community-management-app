@@ -2,8 +2,15 @@
   "appId": "com.ashirvadh.castlerock",
   "appName": "Ashirvadh Castle Rock",
   "webDir": "dist",
-  "server": {
-    "url": "https://community-management-app-phi.vercel.app",
-    "cleartext": true
+  "plugins": {
+    "SplashScreen": {
+      "launchAutoHide": true,
+      "backgroundColor": "#16a34a",
+      "showSpinner": false
+    },
+    "StatusBar": {
+      "style": "LIGHT",
+      "backgroundColor": "#16a34a"
+    }
   }
 }

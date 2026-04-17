@@ -33,6 +33,7 @@ export default function Polls() {
   const [showForm, setShowForm] = useState(false)
   const [voting, setVoting]     = useState({})           // { [pollId]: option }
   const [submitting, setSubmitting] = useState(null)
+  const [voteError, setVoteError]   = useState('')
   const [closing, setClosing]   = useState(null)
 
   const fetch = useCallback(async () => {
@@ -58,6 +59,7 @@ export default function Polls() {
   async function handleVote(pollId, option) {
     if (!myVilla?.id) return
     setSubmitting(pollId)
+    setVoteError('')
     try {
       const { error } = await supabase.from('poll_votes').insert({
         poll_id: pollId, villa_id: myVilla.id, selected_option: option,
@@ -68,7 +70,7 @@ export default function Polls() {
         ? { ...p, poll_votes: [...(p.poll_votes ?? []), { poll_id: pollId, villa_id: myVilla.id, selected_option: option }] }
         : p
       ))
-    } catch (e) { alert(e.message) } finally { setSubmitting(null) }
+    } catch (e) { setVoteError(e.message ?? 'Failed to submit vote.') } finally { setSubmitting(null) }
   }
 
   async function handleClose(pollId) {
@@ -108,6 +110,12 @@ export default function Polls() {
           </button>
         ))}
       </div>
+
+      {voteError && (
+        <div className="mb-4 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
+          {voteError}
+        </div>
+      )}
 
       {loading ? <PollSkeleton /> : displayed.length === 0 ? (
         <EmptyState message={tab === 'active' ? 'No active polls.' : 'No closed polls yet.'} />

@@ -41,8 +41,11 @@ export default function Documents() {
 
   async function handleDelete(d) {
     setDeletingId(d.id)
-    await supabase.from('documents').delete().eq('id', d.id)
-    setDocs(prev => prev.filter(x => x.id !== d.id))
+    try {
+      const { error } = await supabase.from('documents').delete().eq('id', d.id)
+      if (error) throw error
+      setDocs(prev => prev.filter(x => x.id !== d.id))
+    } catch { /* item stays in list */ }
     setDeletingId(null); setConfirmDel(null)
   }
 
@@ -112,99 +115,42 @@ export default function Documents() {
 }
 
 function DocumentCard({ doc: d, canDelete, onDelete, deleting }) {
-  const [openModal, setOpenModal] = useState(false)
+  function handleOpen() {
+    // Open directly in a new tab — no intermediate modal, no React unmount race.
+    // noopener prevents the new tab from accessing window.opener (avoids session interference).
+    window.open(d.file_url, '_blank', 'noopener,noreferrer')
+  }
 
   return (
-    <>
-      <div className="bg-white rounded-xl border border-gray-100 p-4 flex flex-col gap-3
-                      hover:border-gray-200 hover:shadow-sm transition-all">
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex-1 min-w-0">
-            <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full mb-2
-              ${CAT_STYLE[d.category] ?? 'bg-gray-100 text-gray-600'}`}>{d.category}</span>
-            <p className="font-semibold text-gray-900 text-sm leading-snug">{d.title}</p>
-            <p className="text-xs text-gray-400 mt-1">
-              {fmtDate(d.created_at)}{d.uploaded_by ? ` · ${d.uploaded_by}` : ''}
-            </p>
-          </div>
-          <div className="w-10 h-10 rounded-lg bg-gray-50 flex items-center justify-center shrink-0">
-            <FileIcon className="w-5 h-5 text-gray-400" />
-          </div>
+    <div className="bg-white rounded-xl border border-gray-100 p-4 flex flex-col gap-3
+                    hover:border-gray-200 hover:shadow-sm transition-all">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex-1 min-w-0">
+          <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full mb-2
+            ${CAT_STYLE[d.category] ?? 'bg-gray-100 text-gray-600'}`}>{d.category}</span>
+          <p className="font-semibold text-gray-900 text-sm leading-snug">{d.title}</p>
+          <p className="text-xs text-gray-400 mt-1">
+            {fmtDate(d.created_at)}{d.uploaded_by ? ` · ${d.uploaded_by}` : ''}
+          </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setOpenModal(true)}
-            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold
-                       bg-green-50 text-green-700 hover:bg-green-100 rounded-lg transition">
-            <ExternalLinkIcon className="w-3.5 h-3.5" /> Open
-          </button>
-          {canDelete && (
-            <button onClick={onDelete} disabled={deleting}
-              className="px-3 py-2 text-xs font-medium text-red-600 border border-red-200
-                         hover:bg-red-50 rounded-lg transition disabled:opacity-50">
-              {deleting ? '…' : 'Remove'}
-            </button>
-          )}
+        <div className="w-10 h-10 rounded-lg bg-gray-50 flex items-center justify-center shrink-0">
+          <FileIcon className="w-5 h-5 text-gray-400" />
         </div>
       </div>
-
-      {openModal && (
-        <DocOpenModal doc={d} onClose={() => setOpenModal(false)} />
-      )}
-    </>
-  )
-}
-
-function DocOpenModal({ doc: d, onClose }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-sm">
-
-        {/* Header */}
-        <div className="flex items-start gap-3 px-5 pt-5 pb-4 border-b border-gray-100">
-          <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center shrink-0">
-            <FileIcon className="w-5 h-5 text-gray-400" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-semibold text-gray-900 text-sm leading-snug">{d.title}</p>
-            <span className={`inline-block mt-1 px-2 py-0.5 text-xs font-medium rounded-full
-              ${CAT_STYLE[d.category] ?? 'bg-gray-100 text-gray-600'}`}>
-              {d.category}
-            </span>
-            {d.uploaded_by && (
-              <p className="text-xs text-gray-400 mt-1">{d.uploaded_by} · {fmtDate(d.created_at)}</p>
-            )}
-          </div>
-          <button onClick={onClose}
-            className="p-1 text-gray-400 hover:text-gray-600 transition shrink-0">
-            <XIcon className="w-4 h-4" />
+      <div className="flex items-center gap-2">
+        <button
+          onClick={handleOpen}
+          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold
+                     bg-green-50 text-green-700 hover:bg-green-100 rounded-lg transition">
+          <ExternalLinkIcon className="w-3.5 h-3.5" /> Open
+        </button>
+        {canDelete && (
+          <button onClick={onDelete} disabled={deleting}
+            className="px-3 py-2 text-xs font-medium text-red-600 border border-red-200
+                       hover:bg-red-50 rounded-lg transition disabled:opacity-50">
+            {deleting ? '…' : 'Remove'}
           </button>
-        </div>
-
-        {/* Actions */}
-        <div className="px-5 py-5 space-y-2.5">
-          {/* Native <a> tag — browser handles navigation with no JS blocking.
-              onClick closes the modal; the browser then opens the link.
-              noopener,noreferrer prevents the new tab from touching this
-              tab's localStorage/session. */}
-          <a
-            href={d.file_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={onClose}
-            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl
-                       bg-green-600 hover:bg-green-700 text-white text-sm font-semibold transition">
-            <ExternalLinkIcon className="w-4 h-4" />
-            Open Document
-          </a>
-          <button
-            onClick={onClose}
-            className="w-full px-4 py-2 text-sm font-medium text-gray-500
-                       hover:text-gray-700 transition">
-            Cancel
-          </button>
-        </div>
+        )}
       </div>
     </div>
   )
@@ -323,12 +269,12 @@ function ModalFooter({ saving, label, onCancel }) {
 function ConfirmModal({ message, loading, onConfirm, onCancel }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onCancel} />
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={loading ? undefined : onCancel} />
       <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
         <p className="text-sm text-gray-800 font-medium mb-5">{message}</p>
         <div className="flex justify-end gap-3">
-          <button onClick={onCancel} className="px-4 py-2 text-sm font-medium text-gray-600
-            border border-gray-200 hover:border-gray-300 rounded-lg transition">Cancel</button>
+          <button onClick={onCancel} disabled={loading} className="px-4 py-2 text-sm font-medium text-gray-600
+            border border-gray-200 hover:border-gray-300 rounded-lg transition disabled:opacity-50">Cancel</button>
           <button onClick={onConfirm} disabled={loading}
             className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700
                        disabled:bg-red-400 text-white text-sm font-semibold rounded-lg transition">

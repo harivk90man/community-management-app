@@ -62,8 +62,11 @@ function BoardView({ user }) {
 
   async function handleDelete(e) {
     setDeletingId(e.id)
-    await supabase.from('expenses').delete().eq('id', e.id)
-    setExpenses(prev => prev.filter(x => x.id !== e.id))
+    try {
+      const { error } = await supabase.from('expenses').delete().eq('id', e.id)
+      if (error) throw error
+      setExpenses(prev => prev.filter(x => x.id !== e.id))
+    } catch { /* item stays in list */ }
     setDeletingId(null); setConfirmDel(null)
   }
 
@@ -329,12 +332,12 @@ function ModalFooter({ saving, label, onCancel }) {
 function ConfirmModal({ message, loading, onConfirm, onCancel }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onCancel} />
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={loading ? undefined : onCancel} />
       <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
         <p className="text-sm text-gray-800 font-medium mb-5">{message}</p>
         <div className="flex justify-end gap-3">
-          <button onClick={onCancel} className="px-4 py-2 text-sm font-medium text-gray-600
-            border border-gray-200 hover:border-gray-300 rounded-lg transition">Cancel</button>
+          <button onClick={onCancel} disabled={loading} className="px-4 py-2 text-sm font-medium text-gray-600
+            border border-gray-200 hover:border-gray-300 rounded-lg transition disabled:opacity-50">Cancel</button>
           <button onClick={onConfirm} disabled={loading}
             className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700
                        disabled:bg-red-400 text-white text-sm font-semibold rounded-lg transition">

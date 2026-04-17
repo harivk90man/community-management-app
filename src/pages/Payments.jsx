@@ -161,8 +161,11 @@ function BoardView({ user }) {
 
   async function handleDelete(p) {
     setDeletingId(p.id)
-    await supabase.from('payments').delete().eq('id', p.id)
-    setPayments(prev => prev.filter(x => x.id !== p.id))
+    try {
+      const { error } = await supabase.from('payments').delete().eq('id', p.id)
+      if (error) throw error
+      setPayments(prev => prev.filter(x => x.id !== p.id))
+    } catch { /* item stays in list */ }
     setDeletingId(null)
     setConfirmDelete(null)
   }
@@ -634,6 +637,9 @@ function ResidentView({ myVilla }) {
   const [payments, setPayments] = useState([])
   const [loading, setLoading]   = useState(true)
   const [page, setPage]         = useState(1)
+  const [paying, setPaying]     = useState(false)
+  const [paySuccess, setPaySuccess] = useState('')
+  const [payError, setPayError] = useState('')
 
   useEffect(() => {
     if (!myVilla?.id) { setLoading(false); return }
@@ -652,6 +658,80 @@ function ResidentView({ myVilla }) {
   const pageRows   = payments.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
   const totalPaid  = payments.reduce((s, p) => s + Number(p.amount), 0)
 
+  async function handlePayNow() {
+    setPaying(true)
+    setPayError('')
+    setPaySuccess('')
+
+    // Fetch the current monthly due amount
+    const { data: duesData } = await supabase
+      .from('dues_config')
+      .select('monthly_amount')
+      .order('effective_from', { ascending: false })
+      .limit(1)
+
+    const amount = Number(duesData?.[0]?.monthly_amount ?? 0)
+    if (!amount) {
+      setPayError('Monthly dues amount is not configured yet. Contact your board.')
+      setPaying(false)
+      return
+    }
+
+    const razorpayKey = import.meta.env.VITE_RAZORPAY_KEY_ID
+    if (!razorpayKey) {
+      setPayError('Payment gateway is not configured yet. Contact your board.')
+      setPaying(false)
+      return
+    }
+
+    const options = {
+      key: razorpayKey,
+      amount: amount * 100, // Razorpay expects paise
+      currency: 'INR',
+      name: 'Ashirvadh Castle Rock',
+      description: `Maintenance dues – ${MONTHS[CUR_MONTH - 1]} ${CUR_YEAR}`,
+      prefill: {
+        name: myVilla.owner_name ?? '',
+        email: myVilla.email ?? '',
+        contact: myVilla.phone ?? '',
+      },
+      theme: { color: '#16a34a' },
+      handler: async function (response) {
+        // Payment succeeded — record it in Supabase
+        try {
+          const { data, error } = await supabase.from('payments').insert({
+            villa_id: myVilla.id,
+            amount,
+            mode: 'UPI',
+            billing_month: CUR_MONTH,
+            billing_year: CUR_YEAR,
+            paid_on: new Date().toISOString().slice(0, 10),
+            remarks: `Razorpay: ${response.razorpay_payment_id}`,
+            recorded_by: 'Online Payment',
+          }).select('*, villas(villa_number, owner_name)').single()
+          if (error) throw error
+          setPayments(prev => [data, ...prev])
+          setPaySuccess(`Payment of ₹${fmt(amount)} successful!`)
+          setTimeout(() => setPaySuccess(''), 5000)
+        } catch {
+          setPayError('Payment was successful but recording failed. Contact board with your payment ID.')
+        }
+        setPaying(false)
+      },
+      modal: {
+        ondismiss: () => setPaying(false),
+      },
+    }
+
+    try {
+      const rzp = new window.Razorpay(options)
+      rzp.open()
+    } catch {
+      setPayError('Failed to open payment gateway.')
+      setPaying(false)
+    }
+  }
+
   if (!myVilla) {
     return (
       <div className="p-6 py-24 flex flex-col items-center text-center">
@@ -667,11 +747,38 @@ function ResidentView({ myVilla }) {
           <h1 className="text-xl font-bold text-gray-900">My Payments</h1>
           <p className="text-sm text-gray-500 mt-0.5">Villa {myVilla.villa_number}</p>
         </div>
-        <div className="text-right">
-          <p className="text-xs text-gray-400">Total paid (all time)</p>
-          <p className="text-xl font-bold text-green-700">₹{fmt(totalPaid)}</p>
+        <div className="flex items-center gap-4">
+          <div className="text-right">
+            <p className="text-xs text-gray-400">Total paid (all time)</p>
+            <p className="text-xl font-bold text-green-700">₹{fmt(totalPaid)}</p>
+          </div>
+          <button
+            onClick={handlePayNow}
+            disabled={paying || !import.meta.env.VITE_RAZORPAY_KEY_ID}
+            className="relative flex items-center gap-2 px-5 py-2.5 bg-green-600 hover:bg-green-700
+                       disabled:bg-gray-400 text-white text-sm font-bold rounded-xl shadow-lg
+                       hover:shadow-xl transition-all"
+          >
+            {paying ? (
+              <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <PayIcon className="w-4 h-4" />
+            )}
+            {paying ? 'Processing…' : 'Pay Now'}
+            {!import.meta.env.VITE_RAZORPAY_KEY_ID && (
+              <span className="absolute -top-2 -right-2 px-1.5 py-0.5 text-[10px] font-bold
+                               bg-amber-400 text-amber-900 rounded-full">Soon</span>
+            )}
+          </button>
         </div>
       </div>
+
+      {payError && (
+        <div className="mb-4 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">{payError}</div>
+      )}
+      {paySuccess && (
+        <div className="mb-4 px-4 py-3 rounded-lg bg-green-50 border border-green-200 text-sm text-green-700">{paySuccess}</div>
+      )}
 
       {loading ? (
         <TableSkeleton cols={5} />
@@ -780,14 +887,15 @@ function PagBtn({ disabled, onClick, children }) {
 function ConfirmModal({ message, loading, onConfirm, onCancel }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onCancel} />
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={loading ? undefined : onCancel} />
       <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
         <p className="text-sm text-gray-800 font-medium mb-5">{message}</p>
         <div className="flex justify-end gap-3">
           <button
             onClick={onCancel}
+            disabled={loading}
             className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-200
-                       hover:border-gray-300 rounded-lg transition"
+                       hover:border-gray-300 rounded-lg transition disabled:opacity-50"
           >
             Cancel
           </button>
@@ -920,6 +1028,14 @@ function ListIcon({ className }) {
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
         d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+    </svg>
+  )
+}
+function PayIcon({ className }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+        d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
     </svg>
   )
 }
