@@ -139,10 +139,22 @@ export default function Analytics() {
 
 // ─── export report ───────────────────────────────────────────────────────────
 
+function csvSafe(v) {
+  const s = String(v ?? '')
+  return s.includes(',') || s.includes('"') || s.includes('\n')
+    ? `"${s.replace(/"/g, '""')}"`
+    : s
+}
+
 function exportReport(payments, expenses, villas, yearFilter) {
   const yr = yearFilter === 'all' ? null : Number(yearFilter)
   const filtP = yr ? payments.filter(p => p.billing_year === yr) : payments
   const filtE = yr ? expenses.filter(e => expYear(e.expense_date) === yr) : expenses
+
+  // Build a villa_id → villa_number lookup
+  const villaMap = {}
+  villas.forEach(v => { villaMap[v.id] = v.villa_number })
+  function villaNum(id) { return villaMap[id] ?? id }
 
   const totalIncome   = filtP.reduce((s, p) => s + Number(p.amount), 0)
   const totalExpense  = filtE.reduce((s, e) => s + Number(e.amount), 0)
@@ -165,27 +177,27 @@ function exportReport(payments, expenses, villas, yearFilter) {
     `Generated: ${new Date().toLocaleDateString('en-IN')}`,
     '',
     'SUMMARY',
-    `Total Income,₹${fmt(totalIncome)}`,
-    `Total Expenses,₹${fmt(totalExpense)}`,
-    `Net Balance,₹${fmt(netBalance)}`,
+    `Total Income,${totalIncome}`,
+    `Total Expenses,${totalExpense}`,
+    `Net Balance,${netBalance}`,
     `Active Villas,${villas.length}`,
     `Villas Paid,${new Set(filtP.map(p => p.villa_id)).size}`,
     '',
     'INCOME BY MONTH',
     'Month,Amount',
-    ...Object.entries(incByMonth).map(([k, v]) => `${k},₹${fmt(v)}`),
+    ...Object.entries(incByMonth).map(([k, v]) => `${csvSafe(k)},${v}`),
     '',
     'EXPENSES BY CATEGORY',
     'Category,Amount',
-    ...Object.entries(expByCat).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k},₹${fmt(v)}`),
+    ...Object.entries(expByCat).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${csvSafe(k)},${v}`),
     '',
     'PAYMENT DETAILS',
-    'Villa ID,Amount,Mode,Month,Year',
-    ...filtP.map(p => `${p.villa_id},${p.amount},${p.mode},${p.billing_month},${p.billing_year}`),
+    'Villa,Amount,Mode,Month,Year',
+    ...filtP.map(p => [villaNum(p.villa_id), p.amount, p.mode, MONTH_SHORT[p.billing_month - 1], p.billing_year].map(csvSafe).join(',')),
     '',
     'EXPENSE DETAILS',
     'Amount,Category,Date',
-    ...filtE.map(e => `${e.amount},${e.category},${e.expense_date}`),
+    ...filtE.map(e => [e.amount, e.category, e.expense_date].map(csvSafe).join(',')),
   ]
 
   const blob = new Blob([csvLines.join('\n')], { type: 'text/csv' })
