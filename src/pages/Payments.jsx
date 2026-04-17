@@ -79,13 +79,13 @@ function exportCSV(rows) {
 
 export default function Payments() {
   const { villa: myVilla, role, user } = useAuth()
-  if (role === 'board') return <BoardView user={user} />
+  if (role === 'board') return <BoardView user={user} myVilla={myVilla} />
   return <ResidentView myVilla={myVilla} />
 }
 
 // ─── board view ───────────────────────────────────────────────────────────────
 
-function BoardView({ user }) {
+function BoardView({ user, myVilla }) {
   const [payments, setPayments]   = useState([])
   const [villas, setVillas]       = useState([])
   const [loading, setLoading]     = useState(true)
@@ -94,6 +94,8 @@ function BoardView({ user }) {
   const [editing, setEditing]     = useState(null)
   const [deletingId, setDeletingId] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(null) // payment row to delete
+  const [paying, setPaying]       = useState(false)
+  const [payMsg, setPayMsg]       = useState({ type: '', text: '' })
 
   // filters
   const [filterVilla, setFilterVilla] = useState('')
@@ -172,6 +174,52 @@ function BoardView({ user }) {
 
   const pending = summary.totalVillas - summary.paidCount
 
+  async function handleBoardPayNow() {
+    if (!myVilla?.id) { setPayMsg({ type: 'error', text: 'No villa linked to your account.' }); return }
+    setPaying(true)
+    setPayMsg({ type: '', text: '' })
+
+    const { data: duesData } = await supabase
+      .from('dues_config').select('monthly_amount')
+      .order('effective_from', { ascending: false }).limit(1)
+
+    const amount = Number(duesData?.[0]?.monthly_amount ?? 0)
+    if (!amount) { setPayMsg({ type: 'error', text: 'Monthly dues not configured.' }); setPaying(false); return }
+
+    const razorpayKey = import.meta.env.VITE_RAZORPAY_KEY_ID
+    if (!razorpayKey) { setPayMsg({ type: 'error', text: 'Payment gateway not configured yet.' }); setPaying(false); return }
+
+    try {
+      const rzp = new window.Razorpay({
+        key: razorpayKey,
+        amount: amount * 100,
+        currency: 'INR',
+        name: 'Ashirvadh Castle Rock',
+        description: `Maintenance dues – ${MONTHS[CUR_MONTH - 1]} ${CUR_YEAR}`,
+        prefill: { name: myVilla.owner_name ?? '', email: myVilla.email ?? '', contact: myVilla.phone ?? '' },
+        theme: { color: '#16a34a' },
+        handler: async (response) => {
+          try {
+            const { data, error } = await supabase.from('payments').insert({
+              villa_id: myVilla.id, amount, mode: 'UPI',
+              billing_month: CUR_MONTH, billing_year: CUR_YEAR,
+              paid_on: new Date().toISOString().slice(0, 10),
+              remarks: `Razorpay: ${response.razorpay_payment_id}`,
+              recorded_by: 'Online Payment',
+            }).select('*, villas(villa_number, owner_name)').single()
+            if (error) throw error
+            setPayments(prev => [data, ...prev])
+            setPayMsg({ type: 'success', text: `Payment of ₹${fmt(amount)} successful!` })
+            setTimeout(() => setPayMsg({ type: '', text: '' }), 5000)
+          } catch { setPayMsg({ type: 'error', text: 'Payment succeeded but recording failed. Contact admin.' }) }
+          setPaying(false)
+        },
+        modal: { ondismiss: () => setPaying(false) },
+      })
+      rzp.open()
+    } catch { setPayMsg({ type: 'error', text: 'Failed to open payment gateway.' }); setPaying(false) }
+  }
+
   return (
     <div className="p-6">
 
@@ -184,6 +232,23 @@ function BoardView({ user }) {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={handleBoardPayNow}
+            disabled={paying || !import.meta.env.VITE_RAZORPAY_KEY_ID}
+            className="relative flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700
+                       disabled:bg-gray-400 text-white text-sm font-bold rounded-lg transition"
+          >
+            {paying ? (
+              <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <PayIcon className="w-4 h-4" />
+            )}
+            {paying ? 'Processing…' : 'Pay My Dues'}
+            {!import.meta.env.VITE_RAZORPAY_KEY_ID && (
+              <span className="absolute -top-2 -right-2 px-1.5 py-0.5 text-[10px] font-bold
+                               bg-amber-400 text-amber-900 rounded-full">Soon</span>
+            )}
+          </button>
           <button
             onClick={() => exportCSV(filtered)}
             className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium
@@ -203,6 +268,12 @@ function BoardView({ user }) {
           </button>
         </div>
       </div>
+
+      {payMsg.text && (
+        <div className={`mb-4 px-4 py-3 rounded-lg text-sm ${payMsg.type === 'error' ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-green-50 border border-green-200 text-green-700'}`}>
+          {payMsg.text}
+        </div>
+      )}
 
       {/* Summary bar */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
