@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import { usePageData } from '../hooks/usePageData'
+import FetchError from '../components/FetchError'
 
 const CATEGORIES = ['Medical', 'Fire', 'Police', 'Electricity', 'Water', 'Security', 'Other']
 const CAT_STYLE = {
@@ -18,21 +20,17 @@ const EMPTY_FORM = { label: '', phone: '', category: 'Medical', display_order: '
 export default function EmergencyContacts() {
   const { role } = useAuth()
   const [contacts, setContacts] = useState([])
-  const [loading, setLoading]   = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing]   = useState(null)
   const [confirmDel, setConfirmDel] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
 
-  const fetch = useCallback(async () => {
-    setLoading(true)
-    const { data } = await supabase.from('emergency_contacts').select('*')
+  const { loading, error: fetchError, retry } = usePageData(async () => {
+    const { data, error } = await supabase.from('emergency_contacts').select('*')
       .order('category').order('display_order').order('label')
+    if (error) throw error
     setContacts(data ?? [])
-    setLoading(false)
   }, [])
-
-  useEffect(() => { fetch() }, [fetch])
 
   function onSaved(saved, isNew) {
     setContacts(prev => {
@@ -78,6 +76,8 @@ export default function EmergencyContacts() {
           </button>
         )}
       </div>
+
+      {fetchError && <FetchError message={fetchError} onRetry={retry} />}
 
       {loading ? <GridSkeleton /> : contacts.length === 0 ? (
         <EmptyState role={role} onAdd={() => setShowForm(true)} />

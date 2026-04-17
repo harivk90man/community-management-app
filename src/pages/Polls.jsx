@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import { usePageData } from '../hooks/usePageData'
+import FetchError from '../components/FetchError'
 
 function fmtDate(iso) {
   if (!iso) return null
@@ -29,27 +31,24 @@ export default function Polls() {
   const [tab, setTab]           = useState('active')    // 'active' | 'closed'
   const [polls, setPolls]       = useState([])
   const [myVotes, setMyVotes]   = useState([])          // poll_votes for myVilla
-  const [loading, setLoading]   = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [voting, setVoting]     = useState({})           // { [pollId]: option }
   const [submitting, setSubmitting] = useState(null)
   const [voteError, setVoteError]   = useState('')
   const [closing, setClosing]   = useState(null)
 
-  const fetch = useCallback(async () => {
-    setLoading(true)
+  const { loading, error: fetchError, retry } = usePageData(async () => {
     const [pollsRes, votesRes] = await Promise.all([
       supabase.from('polls').select('*, poll_votes(*)').order('created_at', { ascending: false }),
       myVilla?.id
         ? supabase.from('poll_votes').select('poll_id,selected_option').eq('villa_id', myVilla.id)
         : Promise.resolve({ data: [] }),
     ])
+    if (pollsRes.error) throw pollsRes.error
+    if (votesRes.error) throw votesRes.error
     setPolls(pollsRes.data ?? [])
     setMyVotes(votesRes.data ?? [])
-    setLoading(false)
   }, [myVilla?.id])
-
-  useEffect(() => { fetch() }, [fetch])
 
   function onPollCreated(poll) {
     setPolls(prev => [{ ...poll, poll_votes: [] }, ...prev])
@@ -110,6 +109,8 @@ export default function Polls() {
           </button>
         ))}
       </div>
+
+      {fetchError && <FetchError message={fetchError} onRetry={retry} />}
 
       {voteError && (
         <div className="mb-4 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">

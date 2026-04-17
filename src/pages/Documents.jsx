@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import { usePageData } from '../hooks/usePageData'
+import FetchError from '../components/FetchError'
 
 const CATEGORIES = ['Certificate', 'Bylaw', 'Minutes', 'NOC', 'Circular', 'Other']
 const CAT_STYLE = {
@@ -37,24 +39,20 @@ function fmtSize(bytes) {
 export default function Documents() {
   const { role, user } = useAuth()
   const [docs, setDocs]         = useState([])
-  const [loading, setLoading]   = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [showUrlForm, setShowUrlForm] = useState(false)
   const [viewing, setViewing]   = useState(null)   // doc being viewed in-app
   const [confirmDel, setConfirmDel] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
 
-  const fetchDocs = useCallback(async () => {
-    setLoading(true)
-    const { data } = await supabase.from('documents').select('*')
+  const { loading, error: fetchError, retry } = usePageData(async () => {
+    const { data, error } = await supabase.from('documents').select('*')
       .order('category').order('created_at', { ascending: false })
+    if (error) throw error
     setDocs(data ?? [])
-    setLoading(false)
   }, [])
 
-  useEffect(() => { fetchDocs() }, [fetchDocs])
-
-  function onSuccess() { setShowForm(false); fetchDocs() }
+  function onSuccess() { setShowForm(false); retry() }
 
   async function handleDelete(d) {
     setDeletingId(d.id)
@@ -96,6 +94,8 @@ export default function Documents() {
           </button>
         )}
       </div>
+
+      {fetchError && <FetchError message={fetchError} onRetry={retry} />}
 
       {loading ? <GridSkeleton /> : isEmpty ? (
         <EmptyState role={role} onAdd={() => setShowForm(true)} />

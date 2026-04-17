@@ -1,39 +1,40 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import { usePageData } from '../hooks/usePageData'
+import FetchError from '../components/FetchError'
 
 export default function Dashboard() {
   const { villa, role } = useAuth()
   const [stats, setStats] = useState(null)
-  const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    async function fetchStats() {
-      const now = new Date()
-      const month = now.getMonth() + 1
-      const year = now.getFullYear()
+  const { loading, error: fetchError, retry } = usePageData(async () => {
+    const now = new Date()
+    const month = now.getMonth() + 1
+    const year = now.getFullYear()
 
-      const [villasRes, paymentsRes, complaintsRes, announcementsRes] = await Promise.all([
-        supabase.from('villas').select('id', { count: 'exact', head: true }).eq('is_active', true),
-        supabase.from('payments').select('id', { count: 'exact', head: true })
-          .eq('billing_month', month).eq('billing_year', year),
-        supabase.from('complaints').select('id', { count: 'exact', head: true })
-          .eq('status', 'Pending'),
-        supabase.from('announcements').select('id', { count: 'exact', head: true })
-          .eq('is_pinned', false)
-          .or(`ends_at.is.null,ends_at.gte.${now.toISOString()}`),
-      ])
+    const [villasRes, paymentsRes, complaintsRes, announcementsRes] = await Promise.all([
+      supabase.from('villas').select('id', { count: 'exact', head: true }).eq('is_active', true),
+      supabase.from('payments').select('id', { count: 'exact', head: true })
+        .eq('billing_month', month).eq('billing_year', year),
+      supabase.from('complaints').select('id', { count: 'exact', head: true })
+        .eq('status', 'Pending'),
+      supabase.from('announcements').select('id', { count: 'exact', head: true })
+        .eq('is_pinned', false)
+        .or(`ends_at.is.null,ends_at.gte.${now.toISOString()}`),
+    ])
 
-      setStats({
-        totalVillas:         villasRes.count   ?? 0,
-        paymentsThisMonth:   paymentsRes.count ?? 0,
-        openComplaints:      complaintsRes.count ?? 0,
-        activeAnnouncements: announcementsRes.count ?? 0,
-      })
-      setLoading(false)
-    }
+    if (villasRes.error) throw villasRes.error
+    if (paymentsRes.error) throw paymentsRes.error
+    if (complaintsRes.error) throw complaintsRes.error
+    if (announcementsRes.error) throw announcementsRes.error
 
-    fetchStats()
+    setStats({
+      totalVillas:         villasRes.count   ?? 0,
+      paymentsThisMonth:   paymentsRes.count ?? 0,
+      openComplaints:      complaintsRes.count ?? 0,
+      activeAnnouncements: announcementsRes.count ?? 0,
+    })
   }, [])
 
   const STAT_CARDS = [
@@ -87,6 +88,8 @@ export default function Dashboard() {
           )}
         </p>
       </div>
+
+      {fetchError && <FetchError message={fetchError} onRetry={retry} />}
 
       {/* Stat cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

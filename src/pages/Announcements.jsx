@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import { usePageData } from '../hooks/usePageData'
+import FetchError from '../components/FetchError'
 
 const AUDIENCES = ['All', 'Owners', 'Board']
 
@@ -26,24 +28,20 @@ export default function Announcements() {
 
 function BoardView({ user }) {
   const [items, setItems]         = useState([])
-  const [loading, setLoading]     = useState(true)
   const [showForm, setShowForm]   = useState(false)
   const [editing, setEditing]     = useState(null)
   const [confirmDel, setConfirmDel] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
 
-  const fetch = useCallback(async () => {
-    setLoading(true)
-    const { data } = await supabase
+  const { loading, error: fetchError, retry } = usePageData(async () => {
+    const { data, error } = await supabase
       .from('announcements')
       .select('*')
       .order('is_pinned', { ascending: false })
       .order('created_at', { ascending: false })
+    if (error) throw error
     setItems(data ?? [])
-    setLoading(false)
   }, [])
-
-  useEffect(() => { fetch() }, [fetch])
 
   function onSaved(saved, isNew) {
     setItems(prev => {
@@ -76,6 +74,8 @@ function BoardView({ user }) {
           <PlusIcon className="w-4 h-4" /> New Announcement
         </button>
       </div>
+
+      {fetchError && <FetchError message={fetchError} onRetry={retry} />}
 
       {loading ? <CardSkeleton /> : items.length === 0 ? <EmptyState message="No announcements yet." /> : (
         <div className="space-y-3">
@@ -114,22 +114,23 @@ function BoardView({ user }) {
 
 function ResidentView() {
   const [items, setItems]   = useState([])
-  const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
+  const { loading, error: fetchError, retry } = usePageData(async () => {
     const now = new Date().toISOString()
-    supabase.from('announcements').select('*')
+    const { data, error } = await supabase.from('announcements').select('*')
       .in('audience', ['All', 'Owners'])
       .or(`starts_at.is.null,starts_at.lte.${now}`)
       .or(`ends_at.is.null,ends_at.gte.${now}`)
       .order('is_pinned', { ascending: false })
       .order('created_at', { ascending: false })
-      .then(({ data }) => { setItems(data ?? []); setLoading(false) })
+    if (error) throw error
+    setItems(data ?? [])
   }, [])
 
   return (
     <div className="p-6 max-w-3xl">
       <h1 className="text-xl font-bold text-gray-900 mb-6">Announcements</h1>
+      {fetchError && <FetchError message={fetchError} onRetry={retry} />}
       {loading ? <CardSkeleton /> : items.length === 0
         ? <EmptyState message="No announcements right now." />
         : <div className="space-y-3">{items.map(a => <AnnouncementCard key={a.id} item={a} />)}</div>

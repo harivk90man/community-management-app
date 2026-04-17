@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import { usePageData } from '../hooks/usePageData'
+import FetchError from '../components/FetchError'
 
 const CATEGORIES = ['Plumber', 'Electrician', 'Carpenter', 'Painter', 'Cleaner', 'Security', 'Other']
 const CAT_STYLE = {
@@ -18,22 +20,18 @@ const EMPTY_FORM = { name: '', category: 'Plumber', phone: '', email: '', rating
 export default function Vendors() {
   const { role, user } = useAuth()
   const [vendors, setVendors]   = useState([])
-  const [loading, setLoading]   = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing]   = useState(null)
   const [confirmDel, setConfirmDel] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
   const [filterCat, setFilterCat]   = useState('')
 
-  const fetch = useCallback(async () => {
-    setLoading(true)
-    const { data } = await supabase.from('vendors').select('*')
+  const { loading, error: fetchError, retry } = usePageData(async () => {
+    const { data, error } = await supabase.from('vendors').select('*')
       .order('category').order('name')
+    if (error) throw error
     setVendors(data ?? [])
-    setLoading(false)
   }, [])
-
-  useEffect(() => { fetch() }, [fetch])
 
   function onSaved(saved, isNew) {
     setVendors(prev => isNew ? [...prev, saved].sort((a,b) => a.name.localeCompare(b.name)) : prev.map(x => x.id === saved.id ? saved : x))
@@ -67,6 +65,8 @@ export default function Vendors() {
           </button>
         )}
       </div>
+
+      {fetchError && <FetchError message={fetchError} onRetry={retry} />}
 
       {/* Category filter */}
       <div className="flex flex-wrap gap-2 mb-5">

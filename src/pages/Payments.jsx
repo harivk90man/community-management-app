@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import { usePageData } from '../hooks/usePageData'
+import FetchError from '../components/FetchError'
 
 // ─── constants ────────────────────────────────────────────────────────────────
 
@@ -88,7 +90,6 @@ export default function Payments() {
 function BoardView({ user, myVilla }) {
   const [payments, setPayments]   = useState([])
   const [villas, setVillas]       = useState([])
-  const [loading, setLoading]     = useState(true)
   const [page, setPage]           = useState(1)
   const [showForm, setShowForm]   = useState(false)
   const [editing, setEditing]     = useState(null)
@@ -105,8 +106,7 @@ function BoardView({ user, myVilla }) {
   // summary data (for current filter month/year)
   const [summary, setSummary] = useState({ collected: 0, paidCount: 0, totalVillas: 0 })
 
-  const fetchAll = useCallback(async () => {
-    setLoading(true)
+  const { loading, error: fetchError, retry } = usePageData(async () => {
     const [paymentsRes, villasRes] = await Promise.all([
       supabase
         .from('payments')
@@ -118,12 +118,11 @@ function BoardView({ user, myVilla }) {
         .eq('is_active', true)
         .order('villa_number'),
     ])
-    if (!paymentsRes.error) setPayments(paymentsRes.data ?? [])
-    if (!villasRes.error)   setVillas(villasRes.data   ?? [])
-    setLoading(false)
+    if (paymentsRes.error) throw paymentsRes.error
+    if (villasRes.error) throw villasRes.error
+    setPayments(paymentsRes.data ?? [])
+    setVillas(villasRes.data ?? [])
   }, [])
-
-  useEffect(() => { fetchAll() }, [fetchAll])
 
   // recompute summary whenever payments/filter month-year changes
   useEffect(() => {
@@ -268,6 +267,8 @@ function BoardView({ user, myVilla }) {
           </button>
         </div>
       </div>
+
+      {fetchError && <FetchError message={fetchError} onRetry={retry} />}
 
       {payMsg.text && (
         <div className={`mb-4 px-4 py-3 rounded-lg text-sm ${payMsg.type === 'error' ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-green-50 border border-green-200 text-green-700'}`}>
@@ -706,23 +707,20 @@ function PaymentFormModal({ editing, villas, user, onSaved, onClose }) {
 
 function ResidentView({ myVilla }) {
   const [payments, setPayments] = useState([])
-  const [loading, setLoading]   = useState(true)
   const [page, setPage]         = useState(1)
   const [paying, setPaying]     = useState(false)
   const [paySuccess, setPaySuccess] = useState('')
   const [payError, setPayError] = useState('')
 
-  useEffect(() => {
-    if (!myVilla?.id) { setLoading(false); return }
-    supabase
+  const { loading, error: fetchError, retry } = usePageData(async () => {
+    if (!myVilla?.id) return
+    const { data, error } = await supabase
       .from('payments')
       .select('*, villas(villa_number, owner_name)')
       .eq('villa_id', myVilla.id)
       .order('paid_on', { ascending: false })
-      .then(({ data }) => {
-        setPayments(data ?? [])
-        setLoading(false)
-      })
+    if (error) throw error
+    setPayments(data ?? [])
   }, [myVilla?.id])
 
   const totalPages = Math.max(1, Math.ceil(payments.length / PAGE_SIZE))
@@ -843,6 +841,8 @@ function ResidentView({ myVilla }) {
           </button>
         </div>
       </div>
+
+      {fetchError && <FetchError message={fetchError} onRetry={retry} />}
 
       {payError && (
         <div className="mb-4 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">{payError}</div>

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import { usePageData } from '../hooks/usePageData'
+import FetchError from '../components/FetchError'
 
 // ─── constants ────────────────────────────────────────────────────────────────
 
@@ -61,7 +63,6 @@ export default function Complaints() {
 
 function BoardView() {
   const [complaints, setComplaints] = useState([])
-  const [loading, setLoading]       = useState(true)
   const [detail, setDetail]         = useState(null)   // complaint open in detail modal
   const [confirmDel, setConfirmDel] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
@@ -74,19 +75,17 @@ function BoardView() {
   const [fType,     setFType]     = useState('')
   const [fCategory, setFCategory] = useState('')
 
-  const fetch = useCallback(async () => {
-    setLoading(true)
-    const [{ data: cData, error }, { data: vData }] = await Promise.all([
+  const { loading, error: fetchError, retry } = usePageData(async () => {
+    const [{ data: cData, error: cError }, { data: vData, error: vError }] = await Promise.all([
       supabase.from('complaints').select('*, villas(villa_number, owner_name)')
         .order('created_at', { ascending: false }),
       supabase.from('villas').select('id, villa_number, owner_name').order('villa_number'),
     ])
-    if (!error) setComplaints(cData ?? [])
+    if (cError) throw cError
+    if (vError) throw vError
+    setComplaints(cData ?? [])
     setVillas(vData ?? [])
-    setLoading(false)
   }, [])
-
-  useEffect(() => { fetch() }, [fetch])
 
   // status count badges
   const counts = STATUSES.reduce((acc, s) => {
@@ -134,6 +133,8 @@ function BoardView() {
           <PlusIcon className="w-4 h-4" /> Raise Request
         </button>
       </div>
+
+      {fetchError && <FetchError message={fetchError} onRetry={retry} />}
 
       {/* Status count pills */}
       <div className="flex flex-wrap gap-3 mb-6">
@@ -454,20 +455,17 @@ function DetailModal({ complaint, onUpdated, onClose }) {
 
 function ResidentView({ myVilla }) {
   const [complaints, setComplaints] = useState([])
-  const [loading, setLoading]       = useState(true)
   const [showForm, setShowForm]     = useState(false)
 
-  useEffect(() => {
-    if (!myVilla?.id) { setLoading(false); return }
-    supabase
+  const { loading, error: fetchError, retry } = usePageData(async () => {
+    if (!myVilla?.id) return
+    const { data, error } = await supabase
       .from('complaints')
       .select('*')
       .eq('villa_id', myVilla.id)
       .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        setComplaints(data ?? [])
-        setLoading(false)
-      })
+    if (error) throw error
+    setComplaints(data ?? [])
   }, [myVilla?.id])
 
   function onRaised(newC) {
@@ -499,6 +497,8 @@ function ResidentView({ myVilla }) {
           Raise Request
         </button>
       </div>
+
+      {fetchError && <FetchError message={fetchError} onRetry={retry} />}
 
       {loading ? (
         <CardSkeleton />

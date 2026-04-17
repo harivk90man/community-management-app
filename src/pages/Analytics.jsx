@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import { usePageData } from '../hooks/usePageData'
+import FetchError from '../components/FetchError'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, Cell,
@@ -40,24 +42,23 @@ export default function Analytics() {
   const [expenses,   setExpenses]   = useState([])
   const [villas,     setVillas]     = useState([])
   const [monthlyDue, setMonthlyDue] = useState(0)
-  const [loading,    setLoading]    = useState(true)
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    const [{ data: p }, { data: e }, { data: v }, { data: d }] = await Promise.all([
+  const { loading, error: fetchError, retry } = usePageData(async () => {
+    const [pRes, eRes, vRes, dRes] = await Promise.all([
       supabase.from('payments').select('villa_id, amount, mode, billing_month, billing_year'),
       supabase.from('expenses').select('amount, category, expense_date'),
       supabase.from('villas').select('id, villa_number, owner_name, phone, is_active').order('villa_number'),
       supabase.from('dues_config').select('monthly_amount').order('effective_from', { ascending: false }).limit(1),
     ])
-    setPayments(p ?? [])
-    setExpenses(e ?? [])
-    setVillas((v ?? []).filter(x => x.is_active))
-    setMonthlyDue(Number(d?.[0]?.monthly_amount ?? 0))
-    setLoading(false)
+    if (pRes.error) throw pRes.error
+    if (eRes.error) throw eRes.error
+    if (vRes.error) throw vRes.error
+    if (dRes.error) throw dRes.error
+    setPayments(pRes.data ?? [])
+    setExpenses(eRes.data ?? [])
+    setVillas((vRes.data ?? []).filter(x => x.is_active))
+    setMonthlyDue(Number(dRes.data?.[0]?.monthly_amount ?? 0))
   }, [])
-
-  useEffect(() => { load() }, [load])
 
   if (loading) return <LoadingSkeleton />
 
@@ -85,6 +86,8 @@ export default function Analytics() {
           <YearFilter value={yearFilter} onChange={setYearFilter} />
         </div>
       </div>
+
+      {fetchError && <FetchError message={fetchError} onRetry={retry} />}
 
       {/* 1 — Summary cards */}
       <SummaryCards

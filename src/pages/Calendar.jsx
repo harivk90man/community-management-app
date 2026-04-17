@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { usePageData } from '../hooks/usePageData'
+import FetchError from '../components/FetchError'
 
 const MONTH_NAMES = [
   'January','February','March','April','May','June',
@@ -25,11 +27,9 @@ export default function Calendar() {
   const [year, setYear]   = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth())
   const [events, setEvents] = useState([])
-  const [loading, setLoading] = useState(true)
   const [selectedDay, setSelectedDay] = useState(null)
 
-  const fetchEvents = useCallback(async () => {
-    setLoading(true)
+  const { loading, error: fetchError, retry } = usePageData(async () => {
     const startDate = new Date(year, month, 1).toISOString()
     const endDate   = new Date(year, month + 1, 0, 23, 59, 59).toISOString()
 
@@ -43,6 +43,9 @@ export default function Calendar() {
         .lte('created_at', endDate)
         .order('created_at', { ascending: false }),
     ])
+
+    if (annRes.error) throw annRes.error
+    if (compRes.error) throw compRes.error
 
     const mapped = []
 
@@ -68,10 +71,7 @@ export default function Calendar() {
     }
 
     setEvents(mapped)
-    setLoading(false)
   }, [year, month])
-
-  useEffect(() => { fetchEvents() }, [fetchEvents])
 
   // Build calendar grid
   const firstDay  = startOfMonth(year, month).getDay()
@@ -125,6 +125,8 @@ export default function Calendar() {
           </button>
         </div>
       </div>
+
+      {fetchError && <FetchError message={fetchError} onRetry={retry} />}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Calendar grid */}

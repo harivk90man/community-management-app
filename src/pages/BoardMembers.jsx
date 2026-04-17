@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { usePageData } from '../hooks/usePageData'
+import FetchError from '../components/FetchError'
 
 // ─── role config ──────────────────────────────────────────────────────────────
 
@@ -42,21 +44,15 @@ function initials(name) {
 
 export default function BoardMembers() {
   const [members, setMembers] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error,   setError]   = useState('')
 
-  useEffect(() => {
-    async function load() {
-      const { data, error: err } = await supabase
-        .from('villas')
-        .select('id, villa_number, owner_name, phone, email, board_role')
-        .eq('is_board_member', true)
-        .eq('is_active', true)
-      if (err) { setError(err.message); setLoading(false); return }
-      setMembers((data ?? []).sort(roleSort))
-      setLoading(false)
-    }
-    load()
+  const { loading, error: fetchError, retry } = usePageData(async () => {
+    const { data, error } = await supabase
+      .from('villas')
+      .select('id, villa_number, owner_name, phone, email, board_role')
+      .eq('is_board_member', true)
+      .eq('is_active', true)
+    if (error) throw error
+    setMembers((data ?? []).sort(roleSort))
   }, [])
 
   return (
@@ -68,16 +64,12 @@ export default function BoardMembers() {
         <p className="text-sm text-gray-500 mt-1">Your elected representatives</p>
       </div>
 
+      {fetchError && <FetchError message={fetchError} onRetry={retry} />}
+
       {/* States */}
       {loading && <CardSkeleton />}
 
-      {error && (
-        <div className="px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-
-      {!loading && !error && members.length === 0 && (
+      {!loading && !fetchError && members.length === 0 && (
         <div className="py-16 text-center text-gray-400 text-sm">
           No board members found.
         </div>

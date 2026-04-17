@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import { usePageData } from '../hooks/usePageData'
+import FetchError from '../components/FetchError'
 
 const CATEGORIES = ['Maintenance', 'Utilities', 'Security', 'Cleaning', 'Events', 'Other']
 const CAT_STYLE = {
@@ -37,21 +39,17 @@ export default function Expenses() {
 
 function BoardView({ user }) {
   const [expenses, setExpenses]   = useState([])
-  const [loading, setLoading]     = useState(true)
   const [showForm, setShowForm]   = useState(false)
   const [editing, setEditing]     = useState(null)
   const [confirmDel, setConfirmDel] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
   const [filterCat, setFilterCat] = useState('')
 
-  const fetch = useCallback(async () => {
-    setLoading(true)
-    const { data } = await supabase.from('expenses').select('*').order('expense_date', { ascending: false })
+  const { loading, error: fetchError, retry } = usePageData(async () => {
+    const { data, error } = await supabase.from('expenses').select('*').order('expense_date', { ascending: false })
+    if (error) throw error
     setExpenses(data ?? [])
-    setLoading(false)
   }, [])
-
-  useEffect(() => { fetch() }, [fetch])
 
   function onSaved(saved, isNew) {
     setExpenses(prev =>
@@ -88,6 +86,8 @@ function BoardView({ user }) {
           <PlusIcon className="w-4 h-4" /> Add Expense
         </button>
       </div>
+
+      {fetchError && <FetchError message={fetchError} onRetry={retry} />}
 
       {/* Summary cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import { usePageData } from '../hooks/usePageData'
+import FetchError from '../components/FetchError'
 
 function fmtDT(iso) {
   if (!iso) return null
@@ -25,25 +27,22 @@ export default function Visitors() {
 function BoardView({ user }) {
   const [visitors, setVisitors] = useState([])
   const [villas, setVillas]     = useState([])
-  const [loading, setLoading]   = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing]   = useState(null)
   const [confirmDel, setConfirmDel] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
   const [filterActive, setFilterActive] = useState(false)
 
-  const fetch = useCallback(async () => {
-    setLoading(true)
+  const { loading, error: fetchError, retry } = usePageData(async () => {
     const [vRes, viRes] = await Promise.all([
       supabase.from('villas').select('id,villa_number,owner_name').eq('is_active', true).order('villa_number'),
       supabase.from('visitors').select('*, villas(villa_number,owner_name)').order('checked_in', { ascending: false }),
     ])
+    if (vRes.error) throw vRes.error
+    if (viRes.error) throw viRes.error
     setVillas(vRes.data ?? [])
     setVisitors(viRes.data ?? [])
-    setLoading(false)
   }, [])
-
-  useEffect(() => { fetch() }, [fetch])
 
   function onSaved(saved, isNew) {
     setVisitors(prev => isNew ? [saved, ...prev] : prev.map(x => x.id === saved.id ? saved : x))
@@ -97,6 +96,8 @@ function BoardView({ user }) {
           </button>
         </div>
       </div>
+
+      {fetchError && <FetchError message={fetchError} onRetry={retry} />}
 
       {loading ? <TableSkeleton /> : displayed.length === 0 ? (
         <EmptyState message={filterActive ? 'No visitors currently inside.' : 'No visitor records.'} />
@@ -174,13 +175,13 @@ function BoardView({ user }) {
 
 function ResidentView({ myVilla }) {
   const [visitors, setVisitors] = useState([])
-  const [loading, setLoading]   = useState(true)
 
-  useEffect(() => {
-    if (!myVilla?.id) { setLoading(false); return }
-    supabase.from('visitors').select('*').eq('villa_id', myVilla.id)
+  const { loading, error: fetchError, retry } = usePageData(async () => {
+    if (!myVilla?.id) return
+    const { data, error } = await supabase.from('visitors').select('*').eq('villa_id', myVilla.id)
       .order('checked_in', { ascending: false })
-      .then(({ data }) => { setVisitors(data ?? []); setLoading(false) })
+    if (error) throw error
+    setVisitors(data ?? [])
   }, [myVilla?.id])
 
   if (!myVilla) return <div className="p-6 py-24 text-center"><p className="text-gray-500">No villa linked to your account.</p></div>
@@ -188,6 +189,7 @@ function ResidentView({ myVilla }) {
   return (
     <div className="p-6 max-w-3xl">
       <h1 className="text-xl font-bold text-gray-900 mb-6">My Visitors</h1>
+      {fetchError && <FetchError message={fetchError} onRetry={retry} />}
       {loading ? <TableSkeleton /> : visitors.length === 0 ? (
         <EmptyState message="No visitor records for your villa." />
       ) : (
