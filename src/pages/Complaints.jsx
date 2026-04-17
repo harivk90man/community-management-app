@@ -360,6 +360,9 @@ function DetailModal({ complaint, onUpdated, onClose }) {
 
         <div className="px-6 py-5 space-y-5">
 
+          {/* Timeline */}
+          <StatusTimeline complaint={complaint} />
+
           {/* Full description */}
           {complaint.description && (
             <div>
@@ -978,6 +981,93 @@ function ConfirmModal({ message, loading, onConfirm, onCancel }) {
       </div>
     </div>
   )
+}
+
+// ─── status timeline ─────────────────────────────────────────────────────────
+
+function StatusTimeline({ complaint: c }) {
+  const steps = [
+    {
+      label: 'Raised',
+      date: c.created_at,
+      done: true,
+      icon: PlusCircleIcon,
+      color: 'bg-blue-500',
+    },
+    {
+      label: 'In Progress',
+      date: c.status === 'In Progress' || c.status === 'Resolved' ? c.updated_at ?? c.created_at : null,
+      done: c.status === 'In Progress' || c.status === 'Resolved',
+      icon: ClockIcon,
+      color: 'bg-amber-500',
+    },
+    {
+      label: 'Resolved',
+      date: c.status === 'Resolved' ? c.updated_at ?? c.created_at : null,
+      done: c.status === 'Resolved',
+      icon: CheckCircleIcon,
+      color: 'bg-green-500',
+      notes: c.resolved_notes,
+    },
+  ]
+
+  return (
+    <div>
+      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
+        Status Timeline
+      </p>
+      <div className="relative">
+        {steps.map((step, i) => {
+          const Icon = step.icon
+          const isLast = i === steps.length - 1
+          return (
+            <div key={step.label} className="flex gap-3 pb-4 last:pb-0">
+              {/* Vertical line + dot */}
+              <div className="flex flex-col items-center">
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0
+                  ${step.done ? step.color : 'bg-gray-200'}`}>
+                  <Icon className="w-3.5 h-3.5 text-white" />
+                </div>
+                {!isLast && (
+                  <div className={`w-0.5 flex-1 my-1 ${step.done ? 'bg-green-300' : 'bg-gray-200'}`} />
+                )}
+              </div>
+              {/* Content */}
+              <div className="flex-1 min-w-0 pt-0.5">
+                <p className={`text-sm font-semibold ${step.done ? 'text-gray-900' : 'text-gray-400'}`}>
+                  {step.label}
+                </p>
+                {step.date && step.done && (
+                  <p className="text-xs text-gray-400 mt-0.5">{fmtDate(step.date)}</p>
+                )}
+                {step.notes && (
+                  <p className="text-xs text-green-700 bg-green-50 rounded-lg px-2.5 py-1.5 mt-1.5 italic">
+                    {step.notes}
+                  </p>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function PlusCircleIcon({ className }) {
+  return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+      d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+}
+function ClockIcon({ className }) {
+  return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+}
+function CheckCircleIcon({ className }) {
+  return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
 }
 
 // ─── style constants ──────────────────────────────────────────────────────────

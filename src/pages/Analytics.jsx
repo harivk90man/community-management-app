@@ -32,7 +32,7 @@ function expMonth(d) { return d ? new Date(d + 'T00:00:00').getMonth() + 1 : nul
 // ─── main page ────────────────────────────────────────────────────────────────
 
 export default function Analytics() {
-  const { role, user } = useAuth()
+  const { role, user, villa: myVilla } = useAuth()
 
   const now = new Date()
   const [yearFilter, setYearFilter] = useState(String(now.getFullYear()))
@@ -70,7 +70,20 @@ export default function Analytics() {
           <h1 className="text-xl font-bold text-gray-900">Analytics</h1>
           <p className="text-sm text-gray-500 mt-0.5">Financial overview · all data from Supabase</p>
         </div>
-        <YearFilter value={yearFilter} onChange={setYearFilter} />
+        <div className="flex items-center gap-3">
+          {role === 'board' && (
+            <button
+              onClick={() => exportReport(payments, expenses, villas, yearFilter)}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium
+                         text-gray-600 border border-gray-200 hover:border-gray-300
+                         hover:bg-gray-50 rounded-lg transition"
+            >
+              <DownloadIcon className="w-4 h-4" />
+              Export Report
+            </button>
+          )}
+          <YearFilter value={yearFilter} onChange={setYearFilter} />
+        </div>
       </div>
 
       {/* 1 — Summary cards */}
@@ -106,8 +119,80 @@ export default function Analytics() {
         <ExpenseCatChart expenses={expenses} yearFilter={yearFilter} />
       </ChartSection>
 
+      {/* 5 — Resident: My Payment Status (visible to all) */}
+      {myVilla?.id && (
+        <ResidentPaymentStatus
+          payments={payments}
+          myVillaId={myVilla.id}
+          villaNumber={myVilla.villa_number}
+          monthlyDue={monthlyDue}
+          yearFilter={yearFilter}
+        />
+      )}
+
     </div>
   )
+}
+
+// ─── export report ───────────────────────────────────────────────────────────
+
+function exportReport(payments, expenses, villas, yearFilter) {
+  const yr = yearFilter === 'all' ? null : Number(yearFilter)
+  const filtP = yr ? payments.filter(p => p.billing_year === yr) : payments
+  const filtE = yr ? expenses.filter(e => expYear(e.expense_date) === yr) : expenses
+
+  const totalIncome   = filtP.reduce((s, p) => s + Number(p.amount), 0)
+  const totalExpense  = filtE.reduce((s, e) => s + Number(e.amount), 0)
+  const netBalance    = totalIncome - totalExpense
+
+  // Group expenses by category
+  const expByCat = {}
+  filtE.forEach(e => { expByCat[e.category] = (expByCat[e.category] ?? 0) + Number(e.amount) })
+
+  // Group income by month
+  const incByMonth = {}
+  filtP.forEach(p => {
+    const key = `${MONTH_SHORT[p.billing_month - 1]} ${p.billing_year}`
+    incByMonth[key] = (incByMonth[key] ?? 0) + Number(p.amount)
+  })
+
+  const period = yr ? String(yr) : 'All Time'
+  const csvLines = [
+    `Ashirvadh Castle Rock - Financial Report (${period})`,
+    `Generated: ${new Date().toLocaleDateString('en-IN')}`,
+    '',
+    'SUMMARY',
+    `Total Income,₹${fmt(totalIncome)}`,
+    `Total Expenses,₹${fmt(totalExpense)}`,
+    `Net Balance,₹${fmt(netBalance)}`,
+    `Active Villas,${villas.length}`,
+    `Villas Paid,${new Set(filtP.map(p => p.villa_id)).size}`,
+    '',
+    'INCOME BY MONTH',
+    'Month,Amount',
+    ...Object.entries(incByMonth).map(([k, v]) => `${k},₹${fmt(v)}`),
+    '',
+    'EXPENSES BY CATEGORY',
+    'Category,Amount',
+    ...Object.entries(expByCat).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k},₹${fmt(v)}`),
+    '',
+    'PAYMENT DETAILS',
+    'Villa ID,Amount,Mode,Month,Year',
+    ...filtP.map(p => `${p.villa_id},${p.amount},${p.mode},${p.billing_month},${p.billing_year}`),
+    '',
+    'EXPENSE DETAILS',
+    'Amount,Category,Date',
+    ...filtE.map(e => `${e.amount},${e.category},${e.expense_date}`),
+  ]
+
+  const blob = new Blob([csvLines.join('\n')], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = Object.assign(document.createElement('a'), {
+    href: url,
+    download: `ashirvadh_financial_report_${period.replace(/\s/g, '_')}.csv`,
+  })
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 // ─── year filter ──────────────────────────────────────────────────────────────
@@ -540,6 +625,109 @@ function ExpenseCatChart({ expenses, yearFilter }) {
   )
 }
 
+// ─── 5. resident payment status ──────────────────────────────────────────────
+
+function ResidentPaymentStatus({ payments, myVillaId, villaNumber, monthlyDue, yearFilter }) {
+  const yr = yearFilter === 'all' ? new Date().getFullYear() : Number(yearFilter)
+  const currentMonth = new Date().getMonth() + 1
+
+  const myPayments = useMemo(() =>
+    payments.filter(p => p.villa_id === myVillaId && p.billing_year === yr),
+    [payments, myVillaId, yr]
+  )
+
+  const paidMonths = useMemo(() =>
+    new Set(myPayments.map(p => p.billing_month)),
+    [myPayments]
+  )
+
+  const monthsToShow = yr < new Date().getFullYear() ? 12
+    : yr > new Date().getFullYear() ? 0
+    : currentMonth
+
+  const totalPaid = myPayments.reduce((s, p) => s + Number(p.amount), 0)
+  const totalDue  = monthlyDue * monthsToShow
+  const outstanding = Math.max(0, totalDue - totalPaid)
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 p-6">
+      <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
+        <div>
+          <h2 className="text-base font-semibold text-gray-900">My Payment Status</h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Villa {villaNumber} · {yr}
+          </p>
+        </div>
+        <div className="flex gap-6">
+          <div className="text-right">
+            <p className="text-xs text-gray-400">Paid</p>
+            <p className="text-lg font-bold text-green-700">₹{fmt(totalPaid)}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-gray-400">Outstanding</p>
+            <p className={`text-lg font-bold ${outstanding > 0 ? 'text-red-600' : 'text-green-700'}`}>
+              ₹{fmt(outstanding)}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Month grid */}
+      <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-12 gap-2">
+        {MONTH_SHORT.map((m, i) => {
+          const monthNum = i + 1
+          const paid = paidMonths.has(monthNum)
+          const isFuture = yr === new Date().getFullYear() && monthNum > currentMonth
+          const isCurrent = yr === new Date().getFullYear() && monthNum === currentMonth
+          const payment = myPayments.find(p => p.billing_month === monthNum)
+
+          return (
+            <div
+              key={m}
+              className={`rounded-lg p-2.5 text-center border transition-all
+                ${isFuture ? 'bg-gray-50 border-gray-100 opacity-50' :
+                  paid ? 'bg-green-50 border-green-200' :
+                  isCurrent ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-300' :
+                  'bg-red-50 border-red-200'}`}
+            >
+              <p className={`text-xs font-semibold ${isFuture ? 'text-gray-400' : paid ? 'text-green-700' : 'text-red-600'}`}>
+                {m}
+              </p>
+              {paid ? (
+                <CheckMiniIcon className="w-4 h-4 text-green-500 mx-auto mt-1" />
+              ) : isFuture ? (
+                <span className="text-[10px] text-gray-400">—</span>
+              ) : (
+                <XMiniIcon className="w-4 h-4 text-red-400 mx-auto mt-1" />
+              )}
+              {paid && payment && (
+                <p className="text-[10px] text-green-600 font-medium mt-0.5">
+                  ₹{fmt(payment.amount)}
+                </p>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {monthlyDue > 0 && (
+        <p className="text-xs text-gray-400 mt-3">
+          Monthly due: ₹{fmt(monthlyDue)} · {paidMonths.size} of {monthsToShow} months paid
+        </p>
+      )}
+    </div>
+  )
+}
+
+function CheckMiniIcon({ className }) {
+  return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+}
+function XMiniIcon({ className }) {
+  return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
+}
+
 // ─── layout helpers ───────────────────────────────────────────────────────────
 
 function ChartSection({ title, subtitle, children }) {
@@ -645,6 +833,11 @@ function CheckCircleIcon({ className }) {
 function XIcon({ className }) {
   return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+}
+function DownloadIcon({ className }) {
+  return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
 }
 function SearchIcon({ className }) {
   return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">

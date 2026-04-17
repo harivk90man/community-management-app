@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext'
+import { RealtimeProvider } from './contexts/RealtimeContext'
 import ProtectedRoute from './components/ProtectedRoute'
+import ToastContainer from './components/ToastContainer'
 import Layout from './components/Layout'
 import LoginPage from './pages/LoginPage'
 import SignupPage from './pages/SignupPage'
@@ -18,6 +20,7 @@ import Polls from './pages/Polls'
 import Expenses from './pages/Expenses'
 import DuesConfig from './pages/DuesConfig'
 import Analytics from './pages/Analytics'
+import Calendar from './pages/Calendar'
 
 export default function App() {
   return (
@@ -33,7 +36,10 @@ export default function App() {
             path="/"
             element={
               <ProtectedRoute>
-                <Layout />
+                <RealtimeProvider>
+                  <ToastContainer />
+                  <Layout />
+                </RealtimeProvider>
               </ProtectedRoute>
             }
           >
@@ -49,6 +55,7 @@ export default function App() {
             <Route path="emergency"     element={<EmergencyContacts />} />
             <Route path="polls"         element={<Polls />} />
             <Route path="analytics"     element={<Analytics />} />
+            <Route path="calendar"      element={<Calendar />} />
 
             {/* Board-only routes */}
             <Route path="expenses"      element={<Expenses />} />

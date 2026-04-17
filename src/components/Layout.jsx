@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { supabase } from '../lib/supabase'
+import { useRealtime } from '../contexts/RealtimeContext'
+import GlobalSearch from './GlobalSearch'
 
 const NAV_ITEMS = [
   { to: '/',               label: 'Dashboard',          icon: HomeIcon },
@@ -16,6 +17,7 @@ const NAV_ITEMS = [
   { to: '/emergency',      label: 'Emergency Contacts', icon: PhoneIcon },
   { to: '/polls',          label: 'Polls',              icon: ChartIcon },
   { to: '/analytics',     label: 'Analytics',          icon: AnalyticsIcon },
+  { to: '/calendar',      label: 'Calendar',           icon: CalendarIcon },
 ]
 
 const BOARD_ONLY_ITEMS = [
@@ -34,27 +36,10 @@ const BOTTOM_NAV = [
 
 export default function Layout() {
   const { villa, role, logout } = useAuth()
+  const { badges } = useRealtime()
   const navigate = useNavigate()
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const [badges, setBadges] = useState({ complaints: 0, announcements: 0 })
-
-  useEffect(() => {
-    async function fetchBadges() {
-      const [{ count: pendingComplaints }, { count: activeAnnouncements }] = await Promise.all([
-        supabase.from('complaints').select('*', { count: 'exact', head: true }).eq('status', 'Pending'),
-        supabase.from('announcements').select('*', { count: 'exact', head: true })
-          .in('audience', ['All', 'Owners'])
-          .or(`ends_at.is.null,ends_at.gte.${new Date().toISOString()}`),
-      ])
-      setBadges({
-        complaints: pendingComplaints ?? 0,
-        announcements: activeAnnouncements ?? 0,
-      })
-    }
-    fetchBadges()
-    const interval = setInterval(fetchBadges, 60000)
-    return () => clearInterval(interval)
-  }, [])
+  const [searchOpen, setSearchOpen] = useState(false)
 
   async function handleLogout() {
     setDrawerOpen(false)
@@ -138,8 +123,16 @@ export default function Layout() {
             </div>
           </div>
 
-          {/* Desktop: empty left placeholder */}
-          <div className="hidden md:block" />
+          {/* Desktop: search button */}
+          <button
+            onClick={() => setSearchOpen(true)}
+            className="hidden md:flex items-center gap-2 px-3 py-1.5 text-sm text-gray-400
+                       border border-gray-200 rounded-lg hover:border-gray-300 hover:text-gray-600 transition"
+          >
+            <SearchIcon className="w-4 h-4" />
+            <span>Search…</span>
+            <kbd className="ml-2 px-1.5 py-0.5 text-xs bg-gray-100 text-gray-400 rounded font-mono">Ctrl+K</kbd>
+          </button>
 
           {/* Desktop right: user info + sign out */}
           <div className="hidden md:flex items-center gap-4">
@@ -278,6 +271,9 @@ export default function Layout() {
           <BottomNavItem key={item.to} {...item} />
         ))}
       </nav>
+
+      {/* ── Global Search ── */}
+      <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
     </div>
   )
 }
@@ -486,6 +482,22 @@ function AnalyticsIcon({ className }) {
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
         d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
+    </svg>
+  )
+}
+function SearchIcon({ className }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+    </svg>
+  )
+}
+function CalendarIcon({ className }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+        d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
     </svg>
   )
 }
