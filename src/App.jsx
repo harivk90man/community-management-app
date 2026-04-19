@@ -13,9 +13,7 @@ import Complaints from './pages/Complaints'
 import Announcements from './pages/Announcements'
 import BoardMembers from './pages/BoardMembers'
 import Documents from './pages/Documents'
-import Visitors from './pages/Visitors'
 import Vendors from './pages/Vendors'
-import EmergencyContacts from './pages/EmergencyContacts'
 import Polls from './pages/Polls'
 import Expenses from './pages/Expenses'
 import DuesConfig from './pages/DuesConfig'
@@ -50,9 +48,7 @@ export default function App() {
             <Route path="announcements"  element={<Announcements />} />
             <Route path="board-members" element={<BoardMembers />} />
             <Route path="documents"     element={<Documents />} />
-            <Route path="visitors"      element={<Visitors />} />
             <Route path="vendors"       element={<Vendors />} />
-            <Route path="emergency"     element={<EmergencyContacts />} />
             <Route path="polls"         element={<Polls />} />
             <Route path="analytics"     element={<Analytics />} />
             <Route path="calendar"      element={<Calendar />} />

@@ -13,9 +13,7 @@ const NAV_ITEMS = [
   { to: '/announcements',  label: 'Announcements',      icon: MegaphoneIcon },
   { to: '/board-members',  label: 'Board Members',      icon: BadgeIcon },
   { to: '/documents',      label: 'Documents',          icon: DocumentIcon },
-  { to: '/visitors',       label: 'Visitors',           icon: UsersIcon },
   { to: '/vendors',        label: 'Vendors',            icon: BriefcaseIcon },
-  { to: '/emergency',      label: 'Emergency Contacts', icon: PhoneIcon },
   { to: '/polls',          label: 'Polls',              icon: ChartIcon },
   { to: '/analytics',     label: 'Analytics',          icon: AnalyticsIcon },
   { to: '/calendar',      label: 'Calendar',           icon: CalendarIcon },
@@ -88,7 +86,7 @@ export default function Layout() {
 
         {/* Branding */}
         <div className="px-4 pb-2">
-          <p className="text-xs text-gray-400 text-center">Built by Hariharan · v1.0</p>
+          <p className="text-xs text-gray-400 text-center">Community Manager · v1.0</p>
         </div>
 
         {/* User footer */}
@@ -250,7 +248,7 @@ export default function Layout() {
             {/* Branding + sign out */}
             <div className="border-t border-gray-100">
               <div className="px-4 pt-2 pb-1">
-                <p className="text-xs text-gray-400 text-center">Built by Hariharan · v1.0</p>
+                <p className="text-xs text-gray-400 text-center">Community Manager · v1.0</p>
               </div>
               <div className="px-3 pb-4">
                 <button

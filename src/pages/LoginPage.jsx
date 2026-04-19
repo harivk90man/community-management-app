@@ -126,7 +126,7 @@ export default function LoginPage() {
           </p>
 
           <p className="text-center text-xs text-gray-400 mt-5">
-            Built with ❤️ by Hariharan
+            Community Manager · v1.0
           </p>
         </div>
 
