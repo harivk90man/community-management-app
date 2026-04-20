@@ -1,9 +1,47 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 
+// Module-level: track when we last validated the session with the server.
+// Shared across all pages so we don't validate on every single navigation.
+let lastValidatedAt = 0
+const VALIDATE_INTERVAL = 5 * 60 * 1000 // 5 minutes
+
+/**
+ * Validate the session is still good by calling getUser() (server check).
+ * Only does the server call if we haven't validated in the last 5 minutes.
+ * Returns true if session is valid, false if user should be signed out.
+ */
+async function ensureValidSession() {
+  const now = Date.now()
+
+  // If we validated recently, trust the cache
+  if (now - lastValidatedAt < VALIDATE_INTERVAL) {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (session) return true
+  }
+
+  // Server-side validation: getUser() actually hits Supabase auth server
+  const { data: { user }, error } = await supabase.auth.getUser()
+
+  if (error || !user) {
+    // Token is invalid/expired — try to refresh
+    const { data: refreshData, error: refreshErr } = await supabase.auth.refreshSession()
+    if (refreshErr || !refreshData?.session) {
+      // Refresh also failed — session is truly dead
+      await supabase.auth.signOut()
+      return false
+    }
+    lastValidatedAt = Date.now()
+    return true
+  }
+
+  lastValidatedAt = now
+  return true
+}
+
 /**
  * Hook for loading page data from Supabase with:
- * - Automatic session validation before fetching
+ * - Server-validated session check before fetching (every 5 min)
  * - Error display with retry button
  * - Stale-session auto-recovery (refreshes token and retries)
  * - Abort on unmount (prevents setState on unmounted component)
@@ -27,16 +65,14 @@ export function usePageData(fetchFn, deps = []) {
     setError('')
 
     try {
-      // Quick session check — getSession() reads from cache, very fast
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) {
-        // Try one refresh
-        const { error: refreshErr } = await supabase.auth.refreshSession()
-        if (refreshErr) {
-          setError('Session expired. Please sign in again.')
+      // Validate session with the server before fetching data
+      const valid = await ensureValidSession()
+      if (!valid) {
+        if (mountedRef.current) {
+          setError('Session expired. Redirecting to login…')
           setLoading(false)
-          return
         }
+        return
       }
 
       await fetchFn()
@@ -48,13 +84,19 @@ export function usePageData(fetchFn, deps = []) {
       // If it's an auth error and we haven't retried yet, refresh and retry
       if (!retriedRef.current && (msg.includes('JWT') || msg.includes('token') || msg.includes('401'))) {
         retriedRef.current = true
-        await supabase.auth.refreshSession()
-        try {
-          await fetchFn()
-          if (mountedRef.current) { setLoading(false); setError('') }
-          return
-        } catch (retryErr) {
-          if (mountedRef.current) setError(retryErr?.message ?? 'Failed to load data after retry.')
+        // Force re-validation since something went wrong
+        lastValidatedAt = 0
+        const valid = await ensureValidSession()
+        if (!valid) {
+          if (mountedRef.current) setError('Session expired. Redirecting to login…')
+        } else {
+          try {
+            await fetchFn()
+            if (mountedRef.current) { setLoading(false); setError('') }
+            return
+          } catch (retryErr) {
+            if (mountedRef.current) setError(retryErr?.message ?? 'Failed to load data after retry.')
+          }
         }
       } else {
         setError(msg)
@@ -74,6 +116,7 @@ export function usePageData(fetchFn, deps = []) {
 
   const retry = useCallback(() => {
     retriedRef.current = false
+    lastValidatedAt = 0 // Force fresh validation on manual retry
     execute()
   }, [execute])
 

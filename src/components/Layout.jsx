@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { useTheme } from '../contexts/ThemeContext'
 import { useRealtime } from '../contexts/RealtimeContext'
 import GlobalSearch from './GlobalSearch'
 import ErrorBoundary from './ErrorBoundary'
@@ -34,7 +35,9 @@ const BOTTOM_NAV = [
 ]
 
 export default function Layout() {
-  const { villa, role, logout } = useAuth()
+  const { villa, villaUser, role, logout } = useAuth()
+  const { dark, toggle: toggleTheme } = useTheme()
+  const displayName = villaUser?.name ?? villa?.owner_name ?? 'Resident'
   const { badges } = useRealtime()
   const navigate = useNavigate()
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -94,11 +97,11 @@ export default function Layout() {
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center shrink-0">
               <span className="text-sm font-semibold text-green-700">
-                {villa?.owner_name?.[0]?.toUpperCase() ?? '?'}
+                {displayName[0]?.toUpperCase() ?? '?'}
               </span>
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-900 truncate">{villa?.owner_name ?? 'Resident'}</p>
+              <p className="text-sm font-medium text-gray-900 truncate">{displayName}</p>
               <p className="text-xs text-gray-400 truncate">Villa {villa?.villa_number ?? '—'}</p>
             </div>
           </div>
@@ -133,10 +136,15 @@ export default function Layout() {
             <kbd className="ml-2 px-1.5 py-0.5 text-xs bg-gray-100 text-gray-400 rounded font-mono">Ctrl+K</kbd>
           </button>
 
-          {/* Desktop right: user info + sign out */}
+          {/* Desktop right: theme toggle + user info + sign out */}
           <div className="hidden md:flex items-center gap-4">
+            <button onClick={toggleTheme}
+              className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition"
+              title={dark ? 'Switch to light mode' : 'Switch to dark mode'}>
+              {dark ? <SunIcon className="w-5 h-5" /> : <MoonIcon className="w-5 h-5" />}
+            </button>
             <span className="text-sm text-gray-500">
-              {villa?.owner_name ?? ''}{villa ? ` · Villa ${villa.villa_number}` : ''}
+              {displayName}{villa ? ` · Villa ${villa.villa_number}` : ''}
               {role === 'board' && (
                 <span className="ml-2 px-2 py-0.5 text-xs font-medium bg-green-100 text-green-700 rounded-full">
                   Board
@@ -152,14 +160,21 @@ export default function Layout() {
             </button>
           </div>
 
-          {/* Mobile: hamburger button */}
-          <button
-            onClick={() => setDrawerOpen(true)}
-            className="md:hidden p-1.5 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition"
-            aria-label="Open menu"
-          >
-            <MenuIcon className="w-5 h-5" />
-          </button>
+          {/* Mobile: theme toggle + hamburger */}
+          <div className="flex items-center gap-1 md:hidden">
+            <button onClick={toggleTheme}
+              className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition"
+              aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}>
+              {dark ? <SunIcon className="w-5 h-5" /> : <MoonIcon className="w-5 h-5" />}
+            </button>
+            <button
+              onClick={() => setDrawerOpen(true)}
+              className="p-1.5 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition"
+              aria-label="Open menu"
+            >
+              <MenuIcon className="w-5 h-5" />
+            </button>
+          </div>
         </header>
 
         {/* Page content — extra bottom padding on mobile to clear the bottom nav */}
@@ -207,12 +222,12 @@ export default function Layout() {
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-full bg-green-600 flex items-center justify-center shrink-0">
                   <span className="text-sm font-bold text-white">
-                    {villa?.owner_name?.[0]?.toUpperCase() ?? '?'}
+                    {displayName[0]?.toUpperCase() ?? '?'}
                   </span>
                 </div>
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-gray-900 truncate">
-                    {villa?.owner_name ?? 'Resident'}
+                    {displayName}
                   </p>
                   <p className="text-xs text-gray-500">
                     Villa {villa?.villa_number ?? '—'}
@@ -507,6 +522,22 @@ function LogoutIcon({ className }) {
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
         d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+    </svg>
+  )
+}
+function SunIcon({ className }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+        d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+    </svg>
+  )
+}
+function MoonIcon({ className }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+        d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
     </svg>
   )
 }

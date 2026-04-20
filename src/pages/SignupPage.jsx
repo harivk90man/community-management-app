@@ -34,19 +34,34 @@ export default function SignupPage() {
 
     setLoading(true)
     try {
-      // Step 1 — verify the villa exists for this email / phone
+      // Step 1 — verify the user exists in villa_users (or fallback to villas for unmigrated data)
       let villa = null
 
       if (mode === 'email') {
-        const { data } = await supabase
-          .from('villas').select('id').eq('email', email.trim()).eq('is_active', true).maybeSingle()
-        villa = data
+        // Check villa_users first
+        const { data: vuRow } = await supabase
+          .from('villa_users').select('villa_id').eq('email', email.trim()).maybeSingle()
+        if (vuRow) {
+          villa = { id: vuRow.villa_id }
+        } else {
+          // Fallback: check villas table
+          const { data } = await supabase
+            .from('villas').select('id').eq('email', email.trim()).eq('is_active', true).maybeSingle()
+          villa = data
+        }
       } else {
-        // Normalize digits only — handles +91, spaces, dashes, etc.
         const digits = phone.replace(/\D/g, '')
-        const { data: allVillas } = await supabase
-          .from('villas').select('id, phone').eq('is_active', true)
-        villa = allVillas?.find(v => v.phone?.replace(/\D/g, '') === digits) ?? null
+        // Check villa_users first
+        const { data: allVU } = await supabase.from('villa_users').select('villa_id, phone')
+        villa = allVU?.find(vu => vu.phone?.replace(/\D/g, '') === digits)
+          ? { id: allVU.find(vu => vu.phone?.replace(/\D/g, '') === digits).villa_id }
+          : null
+        if (!villa) {
+          // Fallback: check villas table
+          const { data: allVillas } = await supabase
+            .from('villas').select('id, phone').eq('is_active', true)
+          villa = allVillas?.find(v => v.phone?.replace(/\D/g, '') === digits) ?? null
+        }
       }
 
       if (!villa) {

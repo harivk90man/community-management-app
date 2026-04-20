@@ -5,36 +5,67 @@ const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
-  const [villa, setVilla] = useState(null)  // the villa row for logged-in user
-  const [role, setRole] = useState(null)    // 'board' | 'resident'
+  const [villa, setVilla] = useState(null)      // the villa row
+  const [villaUser, setVillaUser] = useState(null)  // the logged-in person's row from villa_users
+  const [role, setRole] = useState(null)         // 'board' | 'resident'
   const [loading, setLoading] = useState(true)
 
   async function loadVillaProfile(authEmail) {
     // Phone-based logins use {digits}@villaapp.local as the Supabase auth email
     const isPhoneEmail = authEmail.endsWith('@villaapp.local')
 
-    let data = null
+    let vuRow = null  // villa_users row
 
     if (isPhoneEmail) {
-      // Digits are already normalized (set at signup). Match against stored phone
-      // by stripping non-digits from both sides to handle any formatting in the DB.
       const digits = authEmail.slice(0, authEmail.lastIndexOf('@'))
-      const { data: allVillas } = await supabase.from('villas').select('*').eq('is_active', true)
-      data = allVillas?.find(v => v.phone?.replace(/\D/g, '') === digits) ?? null
+      const { data: allVU } = await supabase.from('villa_users').select('*')
+      vuRow = allVU?.find(vu => vu.phone?.replace(/\D/g, '') === digits) ?? null
     } else {
       const { data: row } = await supabase
-        .from('villas').select('*').eq('email', authEmail).eq('is_active', true).maybeSingle()
-      data = row ?? null
+        .from('villa_users').select('*').eq('email', authEmail).maybeSingle()
+      vuRow = row ?? null
     }
 
-    if (!data) {
+    // Fallback: check villas table directly (for users not yet migrated to villa_users)
+    if (!vuRow) {
+      let villaData = null
+      if (isPhoneEmail) {
+        const digits = authEmail.slice(0, authEmail.lastIndexOf('@'))
+        const { data: allVillas } = await supabase.from('villas').select('*').eq('is_active', true)
+        villaData = allVillas?.find(v => v.phone?.replace(/\D/g, '') === digits) ?? null
+      } else {
+        const { data: row } = await supabase
+          .from('villas').select('*').eq('email', authEmail).eq('is_active', true).maybeSingle()
+        villaData = row ?? null
+      }
+
+      if (!villaData) {
+        setVilla(null)
+        setVillaUser(null)
+        setRole('resident')
+        return
+      }
+
+      setVilla(villaData)
+      setVillaUser({ name: villaData.owner_name, email: villaData.email, phone: villaData.phone })
+      setRole(villaData.is_board_member ? 'board' : 'resident')
+      return
+    }
+
+    // Load the villa for this villa_user
+    const { data: villaData } = await supabase
+      .from('villas').select('*').eq('id', vuRow.villa_id).eq('is_active', true).maybeSingle()
+
+    if (!villaData) {
       setVilla(null)
+      setVillaUser(null)
       setRole('resident')
       return
     }
 
-    setVilla(data)
-    setRole(data.is_board_member ? 'board' : 'resident')
+    setVillaUser(vuRow)
+    setVilla(villaData)
+    setRole(villaData.is_board_member ? 'board' : 'resident')
   }
 
   useEffect(() => {
@@ -51,6 +82,7 @@ export function AuthProvider({ children }) {
       } else {
         setUser(null)
         setVilla(null)
+        setVillaUser(null)
         setRole(null)
         setLoading(false)
       }
@@ -65,6 +97,7 @@ export function AuthProvider({ children }) {
           // Clear all state; ProtectedRoute will redirect to /login
           setUser(null)
           setVilla(null)
+          setVillaUser(null)
           setRole(null)
           setLoading(false)
           return
@@ -97,8 +130,11 @@ export function AuthProvider({ children }) {
         const away = Date.now() - hiddenAt
         hiddenAt = 0
         // Only refresh if away > 60 seconds — short switches don't need it
+        // Use refreshSession() instead of getSession() to actually validate with server
         if (away > 60_000) {
-          supabase.auth.getSession()
+          supabase.auth.refreshSession().then(({ error }) => {
+            if (error) supabase.auth.signOut()
+          })
         }
       }
     }
@@ -124,8 +160,8 @@ export function AuthProvider({ children }) {
 
   // Memoize so consumers don't re-render unless actual values change
   const value = useMemo(
-    () => ({ user, villa, role, loading, login, logout }),
-    [user, villa, role, loading, login, logout]
+    () => ({ user, villa, villaUser, role, loading, login, logout }),
+    [user, villa, villaUser, role, loading, login, logout]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

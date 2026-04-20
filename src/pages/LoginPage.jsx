@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { supabase } from '../lib/supabase'
 
 const inputCls = `w-full px-4 py-2.5 rounded-lg border border-gray-300 text-sm text-gray-900
   placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500
@@ -29,8 +30,26 @@ export default function LoginPage() {
       const authEmail = mode === 'phone'
         ? `${phone.trim()}@villaapp.local`
         : email.trim()
-      await login(authEmail, password)
-      navigate('/', { replace: true })
+
+      try {
+        await login(authEmail, password)
+        navigate('/', { replace: true })
+        return
+      } catch (firstErr) {
+        // If phone login failed, the user might have added a recovery email
+        // which changed their auth email. Look up their real email from villa_users.
+        if (mode === 'phone') {
+          const digits = phone.replace(/\D/g, '')
+          const { data: allVU } = await supabase.from('villa_users').select('email, phone')
+          const match = allVU?.find(vu => vu.phone?.replace(/\D/g, '') === digits && vu.email)
+          if (match?.email) {
+            await login(match.email, password)
+            navigate('/', { replace: true })
+            return
+          }
+        }
+        throw firstErr
+      }
     } catch (err) {
       setError(err.message ?? 'Login failed. Please check your credentials.')
     } finally {
@@ -103,7 +122,12 @@ export default function LoginPage() {
             )}
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Password</label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-sm font-medium text-gray-700">Password</label>
+                <Link to="/forgot-password" className="text-xs text-green-600 hover:underline">
+                  Forgot password?
+                </Link>
+              </div>
               <input type="password" required value={password}
                 onChange={e => setPassword(e.target.value)}
                 placeholder="••••••••" className={inputCls} />

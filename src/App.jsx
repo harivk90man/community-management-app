@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider } from './contexts/AuthContext'
 import { RealtimeProvider } from './contexts/RealtimeContext'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -6,6 +7,9 @@ import ToastContainer from './components/ToastContainer'
 import Layout from './components/Layout'
 import LoginPage from './pages/LoginPage'
 import SignupPage from './pages/SignupPage'
+import ForgotPasswordPage from './pages/ForgotPasswordPage'
+import ResetPasswordPage from './pages/ResetPasswordPage'
+import ChangePasswordPage from './pages/ChangePasswordPage'
 import Dashboard from './pages/Dashboard'
 import Villas from './pages/Villas'
 import Payments from './pages/Payments'
@@ -22,12 +26,20 @@ import Calendar from './pages/Calendar'
 
 export default function App() {
   return (
+    <ThemeProvider>
     <BrowserRouter>
       <AuthProvider>
         <Routes>
           {/* Public */}
-          <Route path="/login"  element={<LoginPage />} />
-          <Route path="/signup" element={<SignupPage />} />
+          <Route path="/login"           element={<LoginPage />} />
+          <Route path="/signup"          element={<SignupPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password"  element={<ResetPasswordPage />} />
+
+          {/* Protected — force password change (no layout) */}
+          <Route path="/change-password" element={
+            <ProtectedRoute><ChangePasswordPage /></ProtectedRoute>
+          } />
 
           {/* Protected — all inside the shell layout */}
           <Route
@@ -63,5 +75,6 @@ export default function App() {
         </Routes>
       </AuthProvider>
     </BrowserRouter>
+    </ThemeProvider>
   )
 }

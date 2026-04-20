@@ -5,7 +5,9 @@ import { usePageData } from '../hooks/usePageData'
 import FetchError from '../components/FetchError'
 
 export default function Dashboard() {
-  const { villa, role } = useAuth()
+  const { villa, villaUser, user, role } = useAuth()
+  const displayName = villaUser?.name ?? villa?.owner_name
+  const isPhoneUser = user?.email?.endsWith('@villaapp.local')
   const [stats, setStats] = useState(null)
 
   const { loading, error: fetchError, retry } = usePageData(async () => {
@@ -74,7 +76,7 @@ export default function Dashboard() {
       {/* Welcome header */}
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900">
-          Welcome back{villa?.owner_name ? `, ${villa.owner_name}` : ''}
+          Welcome back{displayName ? `, ${displayName}` : ''}
         </h1>
         <p className="text-sm text-gray-500 mt-1">
           Ashirvadh Castle Rock Association
@@ -104,9 +106,9 @@ export default function Dashboard() {
         {villa ? (
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 text-sm">
             <Detail label="Villa Number" value={villa.villa_number} />
-            <Detail label="Owner Name"   value={villa.owner_name} />
-            <Detail label="Email"        value={villa.email ?? '—'} />
-            <Detail label="Phone"        value={villa.phone ?? '—'} />
+            <Detail label="Name"         value={displayName ?? '—'} />
+            <Detail label="Email"        value={villaUser?.email ?? villa.email ?? '—'} />
+            <Detail label="Phone"        value={villaUser?.phone ?? villa.phone ?? '—'} />
             {villa.is_rented && (
               <>
                 <Detail label="Tenant Name"  value={villa.tenant_name ?? '—'} />
@@ -133,7 +135,90 @@ export default function Dashboard() {
           <p className="text-sm text-gray-400">No villa linked to your account.</p>
         )}
       </div>
+
+      {/* Recovery email for phone users */}
+      {isPhoneUser && <RecoveryEmailCard />}
     </div>
+  )
+}
+
+function RecoveryEmailCard() {
+  const [recoveryEmail, setRecoveryEmail] = useState('')
+  const [saving, setSaving]               = useState(false)
+  const [message, setMessage]             = useState({ type: '', text: '' })
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    setMessage({ type: '', text: '' })
+    setSaving(true)
+
+    try {
+      // Update Supabase auth email — this sends a confirmation email
+      const { error } = await supabase.auth.updateUser({
+        email: recoveryEmail.trim(),
+      })
+      if (error) throw error
+      setMessage({
+        type: 'success',
+        text: 'Confirmation email sent! Check your inbox and click the link to confirm. After that, you can use this email to reset your password.',
+      })
+      setRecoveryEmail('')
+    } catch (err) {
+      setMessage({ type: 'error', text: err.message ?? 'Failed to update email.' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="mt-6 bg-white rounded-xl border border-amber-200 p-6">
+      <div className="flex items-start gap-3 mb-4">
+        <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center shrink-0 mt-0.5">
+          <MailIcon className="w-5 h-5 text-amber-600" />
+        </div>
+        <div>
+          <h2 className="text-base font-semibold text-gray-800">Add Recovery Email</h2>
+          <p className="text-sm text-gray-500 mt-0.5">
+            You signed up with your phone number. Add an email so you can reset your password if you forget it.
+          </p>
+        </div>
+      </div>
+
+      {message.text && (
+        <div className={`mb-4 px-4 py-3 rounded-lg text-sm ${
+          message.type === 'success'
+            ? 'bg-green-50 border border-green-200 text-green-700'
+            : 'bg-red-50 border border-red-200 text-red-700'
+        }`}>
+          {message.text}
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="flex gap-3">
+        <input type="email" required value={recoveryEmail}
+          onChange={e => setRecoveryEmail(e.target.value)}
+          placeholder="your.email@example.com"
+          className="flex-1 px-4 py-2 text-sm border border-gray-200 rounded-lg
+                     focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition" />
+        <button type="submit" disabled={saving || !recoveryEmail.trim()}
+          className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400
+                     text-white text-sm font-semibold rounded-lg transition shrink-0 flex items-center gap-2">
+          {saving && (
+            <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+          )}
+          {saving ? 'Sending…' : 'Add email'}
+        </button>
+      </form>
+    </div>
+  )
+}
+
+function MailIcon({ className }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+        d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+    </svg>
   )
 }
 

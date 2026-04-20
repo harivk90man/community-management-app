@@ -1,9 +1,125 @@
 @import "tailwindcss";
 
+/* ── Animations ─────────────────────────────────────────── */
+
 @keyframes slide-in {
   from { opacity: 0; transform: translateX(100%); }
   to   { opacity: 1; transform: translateX(0); }
 }
 .animate-slide-in {
   animation: slide-in 0.3s ease-out;
+}
+
+/* ── Dark mode globals ──────────────────────────────────── */
+/* Applies dark colors globally via .dark on <html>.        */
+/* This avoids adding dark: to every component file.        */
+
+.dark {
+  color-scheme: dark;
+}
+
+/* Body / page background */
+.dark body,
+.dark .bg-gray-50,
+.dark .bg-gradient-to-br {
+  background-color: #0f172a;
+}
+
+/* Cards, modals, popovers — anything bg-white */
+.dark .bg-white {
+  background-color: #1e293b;
+}
+
+/* Gradient headers (villa card, etc.) — keep green but darken */
+.dark .bg-gradient-to-r {
+  opacity: 0.95;
+}
+
+/* Text colors */
+.dark .text-gray-900 { color: #f1f5f9; }
+.dark .text-gray-800 { color: #e2e8f0; }
+.dark .text-gray-700 { color: #cbd5e1; }
+.dark .text-gray-600 { color: #94a3b8; }
+.dark .text-gray-500 { color: #94a3b8; }
+.dark .text-gray-400 { color: #64748b; }
+
+/* Borders */
+.dark .border-gray-100 { border-color: #334155; }
+.dark .border-gray-200 { border-color: #334155; }
+.dark .border-gray-300 { border-color: #475569; }
+.dark .border-gray-50  { border-color: #1e293b; }
+
+/* Light backgrounds used for subtle sections */
+.dark .bg-gray-100 { background-color: #334155; }
+.dark .bg-gray-50  { background-color: #1e293b; }
+
+/* Form inputs */
+.dark input,
+.dark select,
+.dark textarea {
+  background-color: #0f172a;
+  color: #e2e8f0;
+  border-color: #475569;
+}
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #64748b;
+}
+
+/* Hover states */
+.dark .hover\:bg-gray-50:hover  { background-color: #334155; }
+.dark .hover\:bg-gray-100:hover { background-color: #475569; }
+
+/* Skeleton/loading pulse */
+.dark .bg-gray-100.animate-pulse,
+.dark .animate-pulse .bg-gray-100 {
+  background-color: #334155;
+}
+
+/* Green accents — slightly brighter in dark mode */
+.dark .bg-green-50  { background-color: #064e3b; }
+.dark .bg-green-100 { background-color: #065f46; }
+.dark .text-green-700 { color: #6ee7b7; }
+.dark .text-green-600 { color: #6ee7b7; }
+.dark .border-green-100 { border-color: #065f46; }
+.dark .border-green-200 { border-color: #047857; }
+
+/* Red accents */
+.dark .bg-red-50  { background-color: #450a0a; }
+.dark .text-red-600 { color: #fca5a5; }
+.dark .text-red-700 { color: #fca5a5; }
+.dark .border-red-200 { border-color: #7f1d1d; }
+
+/* Amber accents */
+.dark .bg-amber-50  { background-color: #451a03; }
+.dark .text-amber-600 { color: #fcd34d; }
+.dark .text-amber-700 { color: #fcd34d; }
+.dark .border-amber-200 { border-color: #78350f; }
+
+/* Blue accents */
+.dark .bg-blue-50  { background-color: #172554; }
+.dark .bg-blue-100 { background-color: #1e3a5f; }
+.dark .text-blue-600 { color: #93c5fd; }
+.dark .text-blue-700 { color: #93c5fd; }
+
+/* Purple accents */
+.dark .bg-purple-50  { background-color: #2e1065; }
+.dark .text-purple-600 { color: #c4b5fd; }
+.dark .text-purple-700 { color: #c4b5fd; }
+
+/* Backdrop for modals */
+.dark .bg-black\/30 {
+  background-color: rgba(0, 0, 0, 0.6);
+}
+
+/* Scrollbar */
+.dark ::-webkit-scrollbar {
+  width: 8px;
+}
+.dark ::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 4px;
 }

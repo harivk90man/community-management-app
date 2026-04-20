@@ -25,6 +25,17 @@ create table if not exists villas (
   created_at      timestamptz not null default now()
 );
 
+create table if not exists villa_users (
+  id                    uuid primary key default gen_random_uuid(),
+  villa_id              uuid not null references villas (id) on delete cascade,
+  name                  text not null,
+  email                 text,
+  phone                 text,
+  is_primary            boolean not null default false,
+  force_password_change boolean not null default false,
+  created_at            timestamptz not null default now()
+);
+
 create table if not exists payments (
   id            uuid primary key default gen_random_uuid(),
   villa_id      uuid not null references villas (id) on delete cascade,
@@ -161,6 +172,7 @@ create trigger complaints_updated_at
 -- ============================================================
 
 alter table villas             enable row level security;
+alter table villa_users        enable row level security;
 alter table payments           enable row level security;
 alter table expenses           enable row level security;
 alter table dues_config        enable row level security;
@@ -188,6 +200,18 @@ create policy "authenticated users can update villas"
   on villas for update to authenticated using (true);
 create policy "authenticated users can delete villas"
   on villas for delete to authenticated using (true);
+
+-- villa_users
+create policy "anon users can read villa_users"
+  on villa_users for select to anon using (true);
+create policy "authenticated users can read villa_users"
+  on villa_users for select to authenticated using (true);
+create policy "authenticated users can insert villa_users"
+  on villa_users for insert to authenticated with check (true);
+create policy "authenticated users can update villa_users"
+  on villa_users for update to authenticated using (true);
+create policy "authenticated users can delete villa_users"
+  on villa_users for delete to authenticated using (true);
 
 -- payments
 create policy "authenticated users can read payments"

@@ -1,8 +1,9 @@
-import { Navigate } from 'react-router-dom'
+import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
 export default function ProtectedRoute({ children }) {
-  const { user, loading } = useAuth()
+  const { user, villaUser, loading } = useAuth()
+  const location = useLocation()
 
   if (loading) {
     return (
@@ -13,6 +14,11 @@ export default function ProtectedRoute({ children }) {
   }
 
   if (!user) return <Navigate to="/login" replace />
+
+  // Force password change — redirect unless already on that page
+  if (villaUser?.force_password_change && location.pathname !== '/change-password') {
+    return <Navigate to="/change-password" replace />
+  }
 
   return children
 }

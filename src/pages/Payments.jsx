@@ -80,7 +80,7 @@ function exportCSV(rows) {
 // ─── main page ────────────────────────────────────────────────────────────────
 
 export default function Payments() {
-  const { villa: myVilla, role, user } = useAuth()
+  const { villa: myVilla, villaUser, role, user } = useAuth()
   if (role === 'board') return <BoardView user={user} myVilla={myVilla} />
   return <ResidentView myVilla={myVilla} />
 }
@@ -195,7 +195,7 @@ function BoardView({ user, myVilla }) {
         currency: 'INR',
         name: 'Ashirvadh Castle Rock',
         description: `Maintenance dues – ${MONTHS[CUR_MONTH - 1]} ${CUR_YEAR}`,
-        prefill: { name: myVilla.owner_name ?? '', email: myVilla.email ?? '', contact: myVilla.phone ?? '' },
+        prefill: { name: villaUser?.name ?? myVilla.owner_name ?? '', email: villaUser?.email ?? myVilla.email ?? '', contact: villaUser?.phone ?? myVilla.phone ?? '' },
         theme: { color: '#16a34a' },
         handler: async (response) => {
           try {
@@ -760,9 +760,9 @@ function ResidentView({ myVilla }) {
       name: 'Ashirvadh Castle Rock',
       description: `Maintenance dues – ${MONTHS[CUR_MONTH - 1]} ${CUR_YEAR}`,
       prefill: {
-        name: myVilla.owner_name ?? '',
-        email: myVilla.email ?? '',
-        contact: myVilla.phone ?? '',
+        name: villaUser?.name ?? myVilla.owner_name ?? '',
+        email: villaUser?.email ?? myVilla.email ?? '',
+        contact: villaUser?.phone ?? myVilla.phone ?? '',
       },
       theme: { color: '#16a34a' },
       handler: async function (response) {

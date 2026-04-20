@@ -31,12 +31,14 @@ export default function Villas() {
 
 function BoardView() {
   const [villas,     setVillas]     = useState([])
+  const [villaUsers, setVillaUsers] = useState({}) // { villa_id: [user, ...] }
   const [loading,    setLoading]    = useState(true)
   const [search,     setSearch]     = useState('')
   const [page,       setPage]       = useState(1)
   const [showForm,   setShowForm]   = useState(false)
   const [editing,    setEditing]    = useState(null)
   const [togglingId, setTogglingId] = useState(null)
+  const [showUsers,  setShowUsers]  = useState(null) // villa id to show user management
 
   useEffect(() => { fetchVillas() }, [])
 
@@ -45,11 +47,27 @@ function BoardView() {
 
   async function fetchVillas() {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('villas')
-      .select('*')
-      .order('villa_number', { ascending: true })
-    if (!error) setVillas(data ?? [])
+
+    // Validate session with server before fetching
+    const { data: { user }, error: userErr } = await supabase.auth.getUser()
+    if (userErr || !user) {
+      const { error: refreshErr } = await supabase.auth.refreshSession()
+      if (refreshErr) { await supabase.auth.signOut(); return }
+    }
+
+    const [villaRes, usersRes] = await Promise.all([
+      supabase.from('villas').select('*').order('villa_number', { ascending: true }),
+      supabase.from('villa_users').select('*').order('is_primary', { ascending: false }),
+    ])
+    if (!villaRes.error) setVillas(villaRes.data ?? [])
+    if (!usersRes.error) {
+      const grouped = {}
+      for (const u of (usersRes.data ?? [])) {
+        if (!grouped[u.villa_id]) grouped[u.villa_id] = []
+        grouped[u.villa_id].push(u)
+      }
+      setVillaUsers(grouped)
+    }
     setLoading(false)
   }
 
@@ -67,7 +85,7 @@ function BoardView() {
   function openEdit(v) { setEditing(v);    setShowForm(true) }
   function closeForm() { setShowForm(false); setEditing(null) }
 
-  function onSaved(saved, isNew) {
+  function onSaved(saved, isNew, savedUsers) {
     if (isNew) {
       setVillas(prev => [...prev, saved].sort((a, b) =>
         a.villa_number.localeCompare(b.villa_number, undefined, { numeric: true })
@@ -75,14 +93,19 @@ function BoardView() {
     } else {
       setVillas(prev => prev.map(x => x.id === saved.id ? saved : x))
     }
+    if (savedUsers) {
+      setVillaUsers(prev => ({ ...prev, [saved.id]: savedUsers }))
+    }
     closeForm()
   }
 
   const filtered = villas.filter(v => {
     const q = search.toLowerCase()
+    const users = villaUsers[v.id] ?? []
     return (
       v.villa_number.toLowerCase().includes(q) ||
-      v.owner_name.toLowerCase().includes(q)
+      v.owner_name.toLowerCase().includes(q) ||
+      users.some(u => u.name.toLowerCase().includes(q))
     )
   })
 
@@ -124,9 +147,11 @@ function BoardView() {
               <VillaCard
                 key={v.id}
                 villa={v}
+                users={villaUsers[v.id] ?? []}
                 onEdit={() => openEdit(v)}
                 onToggle={() => toggleActive(v)}
                 toggling={togglingId === v.id}
+                onManageUsers={() => setShowUsers(v.id)}
               />
             ))}
           </div>
@@ -166,13 +191,25 @@ function BoardView() {
       {showForm && (
         <VillaFormModal editing={editing} onSaved={onSaved} onClose={closeForm} />
       )}
+
+      {/* Manage Users modal */}
+      {showUsers && (
+        <ManageUsersModal
+          villa={villas.find(v => v.id === showUsers)}
+          users={villaUsers[showUsers] ?? []}
+          onClose={() => setShowUsers(null)}
+          onUsersChanged={(updatedUsers) => {
+            setVillaUsers(prev => ({ ...prev, [showUsers]: updatedUsers }))
+          }}
+        />
+      )}
     </div>
   )
 }
 
 // ─── villa card ────────────────────────────────────────────────────────────────
 
-function VillaCard({ villa: v, onEdit, onToggle, toggling }) {
+function VillaCard({ villa: v, users = [], onEdit, onToggle, toggling, onManageUsers }) {
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm
                     hover:shadow-md hover:-translate-y-0.5 transition-all duration-200
@@ -201,16 +238,24 @@ function VillaCard({ villa: v, onEdit, onToggle, toggling }) {
         <h3 className="font-bold text-gray-900 text-base leading-snug truncate">{v.owner_name}</h3>
       </div>
 
-      {/* Contact */}
+      {/* Registered users */}
       <div className="px-5 py-3 space-y-1.5">
-        <div className="flex items-center gap-2 min-w-0">
-          <MailIcon className="w-3.5 h-3.5 shrink-0 text-gray-400" />
-          <span className="text-sm text-gray-500 truncate">{v.email || '—'}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <PhoneIcon className="w-3.5 h-3.5 shrink-0 text-gray-400" />
-          <span className="text-sm text-gray-500">{v.phone || '—'}</span>
-        </div>
+        {users.length > 0 ? users.map(u => (
+          <div key={u.id} className="flex items-center gap-2 min-w-0">
+            <UserIcon className="w-3.5 h-3.5 shrink-0 text-gray-400" />
+            <span className="text-sm text-gray-600 truncate">
+              {u.name}
+              {u.is_primary && (
+                <span className="ml-1 text-xs text-green-600 font-medium">(Primary)</span>
+              )}
+            </span>
+          </div>
+        )) : (
+          <div className="flex items-center gap-2 min-w-0">
+            <UserIcon className="w-3.5 h-3.5 shrink-0 text-gray-300" />
+            <span className="text-sm text-gray-400 italic">No users registered</span>
+          </div>
+        )}
       </div>
 
       {/* Badges row */}
@@ -233,6 +278,9 @@ function VillaCard({ villa: v, onEdit, onToggle, toggling }) {
             Owner-occupied
           </span>
         )}
+        <span className="px-2.5 py-0.5 text-xs font-medium bg-purple-50 text-purple-700 rounded-full">
+          {users.length} user{users.length !== 1 ? 's' : ''}
+        </span>
       </div>
 
       {/* Tenant name (if rented) */}
@@ -252,11 +300,16 @@ function VillaCard({ villa: v, onEdit, onToggle, toggling }) {
       <div className="flex-1" />
 
       {/* Action buttons */}
-      <div className="grid grid-cols-2 gap-2 px-5 py-4 border-t border-gray-50">
+      <div className="grid grid-cols-3 gap-2 px-5 py-4 border-t border-gray-50">
         <button onClick={onEdit}
           className="py-2 text-xs font-semibold text-gray-600 bg-gray-50
                      hover:bg-gray-100 rounded-lg transition">
           Edit
+        </button>
+        <button onClick={onManageUsers}
+          className="py-2 text-xs font-semibold text-purple-600 bg-purple-50
+                     hover:bg-purple-100 rounded-lg transition">
+          Users
         </button>
         <button onClick={onToggle} disabled={toggling}
           className={`py-2 text-xs font-semibold rounded-lg transition disabled:opacity-50 ${
@@ -302,17 +355,38 @@ function VillaFormModal({ editing, onSaved, onClose }) {
     }
 
     try {
+      let villaData
       if (isEdit) {
         const { data, error: err } = await supabase
           .from('villas').update(payload).eq('id', editing.id).select().single()
         if (err) throw err
-        onSaved(data, false)
+        villaData = data
+
+        // Update or create the primary villa_user
+        const { data: existingPrimary } = await supabase
+          .from('villa_users').select('id').eq('villa_id', editing.id).eq('is_primary', true).maybeSingle()
+        const vuPayload = { name: payload.owner_name, email: payload.email, phone: payload.phone, is_primary: true, villa_id: editing.id }
+        if (existingPrimary) {
+          await supabase.from('villa_users').update(vuPayload).eq('id', existingPrimary.id)
+        } else {
+          await supabase.from('villa_users').insert(vuPayload)
+        }
       } else {
         const { data, error: err } = await supabase
           .from('villas').insert({ ...payload, is_active: true }).select().single()
         if (err) throw err
-        onSaved(data, true)
+        villaData = data
+
+        // Auto-create primary villa_user
+        await supabase.from('villa_users').insert({
+          villa_id: villaData.id, name: payload.owner_name, email: payload.email, phone: payload.phone, is_primary: true,
+        })
       }
+
+      // Fetch updated users for this villa
+      const { data: updatedUsers } = await supabase
+        .from('villa_users').select('*').eq('villa_id', villaData.id).order('is_primary', { ascending: false })
+      onSaved(villaData, !isEdit, updatedUsers ?? [])
     } catch (err) {
       setError(err.message ?? 'Something went wrong.')
     } finally {
@@ -420,9 +494,234 @@ function VillaFormModal({ editing, onSaved, onClose }) {
   )
 }
 
-// ─── resident view (unchanged) ────────────────────────────────────────────────
+// ─── manage users modal ──────────────────────────────────────────────────────
+
+function ManageUsersModal({ villa, users, onClose, onUsersChanged }) {
+  const [list, setList] = useState(users)
+  const [addName, setAddName] = useState('')
+  const [addEmail, setAddEmail] = useState('')
+  const [addPhone, setAddPhone] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(null)
+  const [error, setError] = useState('')
+  const [resettingId, setResettingId] = useState(null)
+  const [tempPassword, setTempPassword] = useState('')
+  const [resetResult, setResetResult] = useState(null) // { userId, password } to show
+
+  async function handleAdd(e) {
+    e.preventDefault()
+    if (!addName.trim()) return
+    setError('')
+    setSaving(true)
+    try {
+      const { data, error: err } = await supabase.from('villa_users').insert({
+        villa_id: villa.id,
+        name: addName.trim(),
+        email: addEmail.trim() || null,
+        phone: addPhone.trim() || null,
+        is_primary: false,
+      }).select().single()
+      if (err) throw err
+      const updated = [...list, data]
+      setList(updated)
+      onUsersChanged(updated)
+      setAddName(''); setAddEmail(''); setAddPhone('')
+    } catch (err) {
+      setError(err.message ?? 'Failed to add user.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDelete(userId) {
+    const user = list.find(u => u.id === userId)
+    if (user?.is_primary) return
+    setDeleting(userId)
+    try {
+      const { error: err } = await supabase.from('villa_users').delete().eq('id', userId)
+      if (err) throw err
+      const updated = list.filter(u => u.id !== userId)
+      setList(updated)
+      onUsersChanged(updated)
+    } catch { /* silently fail */ }
+    setDeleting(null)
+  }
+
+  async function handleResetPassword(u) {
+    if (!tempPassword.trim()) return
+    setResettingId(u.id)
+    setError('')
+    try {
+      // Determine which RPC to call based on whether user has email or phone
+      if (u.email) {
+        const { error: err } = await supabase.rpc('admin_reset_password', {
+          target_email: u.email,
+          new_password: tempPassword.trim(),
+        })
+        if (err) throw err
+      } else if (u.phone) {
+        const digits = u.phone.replace(/\D/g, '')
+        const { error: err } = await supabase.rpc('admin_reset_password_by_phone', {
+          target_phone: digits,
+          new_password: tempPassword.trim(),
+        })
+        if (err) throw err
+      } else {
+        throw new Error('User has no email or phone — cannot reset password.')
+      }
+
+      // Set force_password_change flag
+      await supabase.from('villa_users').update({ force_password_change: true }).eq('id', u.id)
+
+      setResetResult({ userId: u.id, password: tempPassword.trim() })
+      setTempPassword('')
+    } catch (err) {
+      setError(err.message ?? 'Failed to reset password.')
+    } finally {
+      setResettingId(null)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
+
+      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh]
+                      overflow-y-auto flex flex-col">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">
+              Villa {villa?.villa_number} — Users
+            </h2>
+            <p className="text-sm text-gray-500 mt-0.5">
+              {list.length} registered user{list.length !== 1 ? 's' : ''}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition">
+            <XIcon className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-4">
+          {error && (
+            <div className="px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
+              {error}
+            </div>
+          )}
+
+          {/* Existing users */}
+          <div className="space-y-3">
+            {list.map(u => (
+              <div key={u.id} className="p-3 bg-gray-50 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-gray-900 truncate">
+                      {u.name}
+                      {u.is_primary && (
+                        <span className="ml-2 px-2 py-0.5 text-xs font-medium bg-green-100 text-green-700 rounded-full">
+                          Primary
+                        </span>
+                      )}
+                    </p>
+                    <p className="text-xs text-gray-500 truncate">
+                      {[u.email, u.phone].filter(Boolean).join(' · ') || 'No contact info'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 ml-2 shrink-0">
+                    <button
+                      onClick={() => setResettingId(resettingId === u.id ? null : u.id)}
+                      className="p-1.5 text-amber-500 hover:text-amber-700 hover:bg-amber-50
+                                 rounded-lg transition text-xs font-medium">
+                      <KeyIcon className="w-4 h-4" />
+                    </button>
+                    {!u.is_primary && (
+                      <button
+                        onClick={() => handleDelete(u.id)}
+                        disabled={deleting === u.id}
+                        className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50
+                                   rounded-lg transition disabled:opacity-50">
+                        <TrashIcon className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Reset password inline form */}
+                {resettingId === u.id && (
+                  <div className="mt-2 pt-2 border-t border-gray-200 space-y-2">
+                    {resetResult?.userId === u.id ? (
+                      <div className="px-3 py-2 bg-green-50 border border-green-200 rounded-lg">
+                        <p className="text-xs font-medium text-green-700">Password reset! Temp password:</p>
+                        <p className="text-sm font-mono font-bold text-green-900 mt-1 select-all">
+                          {resetResult.password}
+                        </p>
+                        <p className="text-xs text-green-600 mt-1">
+                          Share this with the user. They'll be asked to change it on next login.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="flex gap-2">
+                        <input type="text" value={tempPassword}
+                          onChange={e => setTempPassword(e.target.value)}
+                          placeholder="Enter temp password"
+                          className={inputCls + ' text-xs'} />
+                        <button onClick={() => handleResetPassword(u)}
+                          disabled={!tempPassword.trim()}
+                          className="px-3 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300
+                                     text-white text-xs font-semibold rounded-lg transition shrink-0">
+                          Reset
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Add new user form */}
+          <form onSubmit={handleAdd} className="border-t border-gray-100 pt-4 space-y-3">
+            <p className="text-sm font-semibold text-gray-700">Add a user</p>
+            <div className="grid grid-cols-1 gap-3">
+              <input type="text" required value={addName}
+                onChange={e => setAddName(e.target.value)}
+                placeholder="Name *" className={inputCls} />
+              <div className="grid grid-cols-2 gap-3">
+                <input type="email" value={addEmail}
+                  onChange={e => setAddEmail(e.target.value)}
+                  placeholder="Email" className={inputCls} />
+                <input type="tel" value={addPhone}
+                  onChange={e => setAddPhone(e.target.value)}
+                  placeholder="Phone" className={inputCls} />
+              </div>
+            </div>
+            <button type="submit" disabled={saving || !addName.trim()}
+              className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700
+                         disabled:bg-purple-300 text-white text-sm font-semibold rounded-lg transition">
+              {saving && (
+                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              )}
+              {saving ? 'Adding…' : 'Add User'}
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── resident view ───────────────────────────────────────────────────────────
 
 function ResidentView({ villa }) {
+  const [users, setUsers] = useState([])
+
+  useEffect(() => {
+    if (!villa) return
+    supabase.from('villa_users').select('*').eq('villa_id', villa.id)
+      .order('is_primary', { ascending: false })
+      .then(({ data }) => setUsers(data ?? []))
+  }, [villa?.id])
+
   if (!villa) {
     return (
       <div className="p-6 flex flex-col items-center justify-center text-center py-24">
@@ -457,12 +756,32 @@ function ResidentView({ villa }) {
         </div>
 
         <div className="p-6 space-y-4">
-          <Section title="Owner Details">
-            <DetailRow label="Email"  value={villa.email ?? '—'} />
-            <DetailRow label="Phone"  value={villa.phone ?? '—'} />
+          <Section title="Registered Users">
+            {users.length > 0 ? users.map(u => (
+              <div key={u.id} className="flex items-center justify-between py-1.5 border-b border-gray-50 last:border-0">
+                <div className="min-w-0">
+                  <span className="text-sm font-medium text-gray-900">{u.name}</span>
+                  {u.is_primary && (
+                    <span className="ml-2 text-xs text-green-600 font-medium">(Primary)</span>
+                  )}
+                </div>
+                <span className="text-xs text-gray-400 truncate ml-2">
+                  {[u.email, u.phone].filter(Boolean).join(' · ')}
+                </span>
+              </div>
+            )) : (
+              <DetailRow label="Users" value="—" />
+            )}
+          </Section>
+
+          <Section title="Villa Details">
             <DetailRow label="Status" value={
               <Badge color={villa.is_active ? 'green' : 'gray'}
                      label={villa.is_active ? 'Active' : 'Inactive'} />
+            } />
+            <DetailRow label="Occupancy" value={
+              <Badge color={villa.is_rented ? 'blue' : 'amber'}
+                     label={villa.is_rented ? 'Rented' : 'Owner-occupied'} />
             } />
           </Section>
 
@@ -470,7 +789,6 @@ function ResidentView({ villa }) {
             <Section title="Tenant Details">
               <DetailRow label="Name"     value={villa.tenant_name  ?? '—'} />
               <DetailRow label="Phone"    value={villa.tenant_phone ?? '—'} />
-              <DetailRow label="Occupancy" value={<Badge color="blue" label="Rented" />} />
             </Section>
           )}
         </div>
@@ -640,4 +958,19 @@ function ChevronLeftIcon({ className }) {
 function ChevronRightIcon({ className }) {
   return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+}
+function UserIcon({ className }) {
+  return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+      d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+}
+function TrashIcon({ className }) {
+  return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+}
+function KeyIcon({ className }) {
+  return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+      d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>
 }
