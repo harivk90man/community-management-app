@@ -38,17 +38,18 @@ export default function Analytics() {
 
   const now = new Date()
   const [yearFilter, setYearFilter] = useState(String(now.getFullYear()))
-  const [payments,   setPayments]   = useState([])
-  const [expenses,   setExpenses]   = useState([])
-  const [villas,     setVillas]     = useState([])
-  const [monthlyDue, setMonthlyDue] = useState(0)
+  const [payments,      setPayments]      = useState([])
+  const [expenses,      setExpenses]      = useState([])
+  const [villas,        setVillas]        = useState([])
+  const [monthlyDue,    setMonthlyDue]    = useState(0)
+  const [effectiveFrom, setEffectiveFrom] = useState(null) // { year, month }
 
   const { loading, error: fetchError, retry } = usePageData(async () => {
     const [pRes, eRes, vRes, dRes] = await Promise.all([
       supabase.from('payments').select('villa_id, amount, mode, billing_month, billing_year'),
       supabase.from('expenses').select('amount, category, expense_date'),
       supabase.from('villas').select('id, villa_number, owner_name, phone, is_active').order('villa_number'),
-      supabase.from('dues_config').select('monthly_amount').order('effective_from', { ascending: false }).limit(1),
+      supabase.from('dues_config').select('monthly_amount, effective_from').order('effective_from', { ascending: false }).limit(1),
     ])
     if (pRes.error) throw pRes.error
     if (eRes.error) throw eRes.error
@@ -58,6 +59,11 @@ export default function Analytics() {
     setExpenses(eRes.data ?? [])
     setVillas((vRes.data ?? []).filter(x => x.is_active))
     setMonthlyDue(Number(dRes.data?.[0]?.monthly_amount ?? 0))
+    const ef = dRes.data?.[0]?.effective_from
+    if (ef) {
+      const d = new Date(ef + 'T00:00:00')
+      setEffectiveFrom({ year: d.getFullYear(), month: d.getMonth() + 1 })
+    }
   }, [])
 
   if (loading) return <LoadingSkeleton />
@@ -110,6 +116,7 @@ export default function Analytics() {
         <DefaultersSection
           payments={payments} villas={villas}
           monthlyDue={monthlyDue} user={user}
+          effectiveFrom={effectiveFrom}
           onPaymentAdded={p => setPayments(prev => [...prev, p])}
         />
       )}
@@ -342,10 +349,13 @@ function IncomeExpenseChart({ payments, expenses, yearFilter }) {
 
 // ─── 3. defaulters ────────────────────────────────────────────────────────────
 
-function DefaultersSection({ payments, villas, monthlyDue, user, onPaymentAdded }) {
+const DUE_BY_DAY = 10 // Maintenance due by the 10th of every month
+
+function DefaultersSection({ payments, villas, monthlyDue, user, effectiveFrom, onPaymentAdded }) {
   const _now = new Date()
   const currentYear  = _now.getFullYear()
   const currentMonth = _now.getMonth() + 1
+  const currentDay   = _now.getDate()
 
   const [defMonth,    setDefMonth]    = useState(currentMonth)
   const [defYear,     setDefYear]     = useState(currentYear)
@@ -353,11 +363,38 @@ function DefaultersSection({ payments, villas, monthlyDue, user, onPaymentAdded 
   const [quickPay,    setQuickPay]    = useState(null)
   const [successMsg,  setSuccessMsg]  = useState('')
 
-  // How many months to count for "missed" — based on how far through the year we are,
-  // NOT tied to the month dropdown. Past years count all 12; future years count 0.
-  const monthsInYear = defYear < currentYear ? 12
-    : defYear > currentYear ? 0
-    : currentMonth
+  // Check if a given month/year is before the effective_from date
+  function isBeforeEffective(month, year) {
+    if (!effectiveFrom) return false
+    return year < effectiveFrom.year || (year === effectiveFrom.year && month < effectiveFrom.month)
+  }
+
+  // Check if a month is "due" yet — current month is only due after the 10th
+  function isMonthDue(month, year) {
+    if (isBeforeEffective(month, year)) return false
+    if (year < currentYear) return true
+    if (year > currentYear) return false
+    if (month < currentMonth) return true
+    if (month === currentMonth) return currentDay > DUE_BY_DAY
+    return false
+  }
+
+  // Selected month: is it due yet?
+  const selectedMonthDue = isMonthDue(defMonth, defYear)
+
+  // How many months to count for "missed" — only months that are due and after effective_from
+  const monthsToCheck = useMemo(() => {
+    const months = []
+    const endMonth = defYear < currentYear ? 12
+      : defYear > currentYear ? 0
+      : currentMonth
+    for (let m = 1; m <= endMonth; m++) {
+      if (!isBeforeEffective(m, defYear) && isMonthDue(m, defYear)) {
+        months.push(m)
+      }
+    }
+    return months
+  }, [defYear, currentYear, currentMonth, currentDay, effectiveFrom])
 
   const paidIds = useMemo(() =>
     new Set(
@@ -368,18 +405,22 @@ function DefaultersSection({ payments, villas, monthlyDue, user, onPaymentAdded 
     [payments, defMonth, defYear]
   )
 
-  const defaulters = useMemo(() =>
-    villas
+  const defaulters = useMemo(() => {
+    // If selected month isn't due yet or is before effective date, no defaulters
+    if (!selectedMonthDue) return []
+
+    return villas
       .filter(v => !paidIds.has(v.id))
       .filter(v => !search || v.villa_number.toLowerCase().includes(search.toLowerCase()))
       .map(v => {
-        const missed = Array.from({ length: monthsInYear }, (_, i) => i + 1)
+        const missed = monthsToCheck
           .filter(m => !payments.some(p => p.villa_id === v.id && p.billing_month === m && p.billing_year === defYear))
           .length
         return { ...v, missed }
       })
-      .sort((a, b) => b.missed - a.missed),
-    [villas, paidIds, payments, defYear, monthsInYear, search]
+      .sort((a, b) => b.missed - a.missed)
+  },
+    [villas, paidIds, payments, defYear, monthsToCheck, selectedMonthDue, search]
   )
 
   return (
@@ -389,7 +430,13 @@ function DefaultersSection({ payments, villas, monthlyDue, user, onPaymentAdded 
       <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
         <div>
           <h2 className="text-base font-semibold text-gray-900">Defaulters</h2>
-          <p className="text-xs text-gray-500 mt-0.5">Villas that have not paid for the selected month</p>
+          <p className="text-xs text-gray-500 mt-0.5">
+            {!selectedMonthDue
+              ? isBeforeEffective(defMonth, defYear)
+                ? 'This month is before the dues start date'
+                : `Dues for this month are due by the ${DUE_BY_DAY}th — not yet overdue`
+              : 'Villas that have not paid for the selected month'}
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <select value={defMonth} onChange={e => setDefMonth(Number(e.target.value))} className={selectCls}>
