@@ -63,6 +63,7 @@ export default function Dashboard() {
       unpaidCount,
       dueDay,
       isPastDueDay,
+      isBeforeGoLive,
     })
   }, [])
 
@@ -88,13 +89,13 @@ export default function Dashboard() {
       bg: 'bg-green-50',
       iconColor: 'text-green-600',
     },
-    ...(stats?.isPastDueDay && stats?.defaulters > 0 ? [{
+    ...(!stats?.isBeforeGoLive && stats?.isPastDueDay && stats?.defaulters > 0 ? [{
       label: `Defaulters (past ${stats.dueDay}th)`,
       value: stats.defaulters,
       icon: AlertIcon,
       bg: 'bg-red-50',
       iconColor: 'text-red-600',
-    }] : stats?.unpaidCount > 0 ? [{
+    }] : !stats?.isBeforeGoLive && stats?.unpaidCount > 0 ? [{
       label: 'Pending Payments',
       value: stats.unpaidCount,
       icon: FlagIcon,

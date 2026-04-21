@@ -2,9 +2,27 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 
 // Module-level: track when we last validated the session with the server.
-// Shared across all pages so we don't validate on every single navigation.
 let lastValidatedAt = 0
 const VALIDATE_INTERVAL = 5 * 60 * 1000 // 5 minutes
+
+/**
+ * Wrap a promise with a timeout so it never hangs forever.
+ */
+function withTimeout(promise, ms = 10_000) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('Request timed out')), ms)),
+  ])
+}
+
+/**
+ * Check if a Supabase session's access token is expired or about to expire.
+ */
+function isTokenExpired(session) {
+  if (!session?.expires_at) return true
+  // expires_at is in seconds since epoch; consider expired if < 30s remaining
+  return session.expires_at - 30 < Date.now() / 1000
+}
 
 /**
  * Validate the session is still good by calling getUser() (server check).
@@ -14,29 +32,55 @@ const VALIDATE_INTERVAL = 5 * 60 * 1000 // 5 minutes
 async function ensureValidSession() {
   const now = Date.now()
 
-  // If we validated recently, trust the cache
+  // If we validated recently, trust the cache — but only if the token isn't expired
   if (now - lastValidatedAt < VALIDATE_INTERVAL) {
     const { data: { session } } = await supabase.auth.getSession()
-    if (session) return true
+    if (session && !isTokenExpired(session)) return true
+    // Token expired in cache — fall through to server validation
   }
 
-  // Server-side validation: getUser() actually hits Supabase auth server
-  const { data: { user }, error } = await supabase.auth.getUser()
+  try {
+    // Server-side validation with timeout
+    const { data: { user }, error } = await withTimeout(supabase.auth.getUser())
 
-  if (error || !user) {
-    // Token is invalid/expired — try to refresh
-    const { data: refreshData, error: refreshErr } = await supabase.auth.refreshSession()
-    if (refreshErr || !refreshData?.session) {
-      // Refresh also failed — session is truly dead
-      await supabase.auth.signOut()
+    if (error || !user) {
+      // Token is invalid/expired — try to refresh
+      const { data: refreshData, error: refreshErr } = await withTimeout(
+        supabase.auth.refreshSession()
+      )
+      if (refreshErr || !refreshData?.session) {
+        await supabase.auth.signOut()
+        return false
+      }
+      lastValidatedAt = Date.now()
+      return true
+    }
+
+    lastValidatedAt = now
+    return true
+  } catch {
+    // Timeout or network error — try refresh as last resort
+    try {
+      const { data, error } = await withTimeout(supabase.auth.refreshSession(), 8000)
+      if (error || !data?.session) {
+        await supabase.auth.signOut()
+        return false
+      }
+      lastValidatedAt = Date.now()
+      return true
+    } catch {
+      // Total failure — don't sign out, let user retry
       return false
     }
-    lastValidatedAt = Date.now()
-    return true
   }
+}
 
-  lastValidatedAt = now
-  return true
+/**
+ * Reset the validation timer so the next fetch does a full server check.
+ * Called from AuthContext on app resume / visibility change.
+ */
+export function invalidateSession() {
+  lastValidatedAt = 0
 }
 
 /**
@@ -82,9 +126,8 @@ export function usePageData(fetchFn, deps = []) {
       const msg = err?.message ?? 'Failed to load data.'
 
       // If it's an auth error and we haven't retried yet, refresh and retry
-      if (!retriedRef.current && (msg.includes('JWT') || msg.includes('token') || msg.includes('401'))) {
+      if (!retriedRef.current && (msg.includes('JWT') || msg.includes('token') || msg.includes('401') || msg.includes('timed out'))) {
         retriedRef.current = true
-        // Force re-validation since something went wrong
         lastValidatedAt = 0
         const valid = await ensureValidSession()
         if (!valid) {
@@ -116,7 +159,7 @@ export function usePageData(fetchFn, deps = []) {
 
   const retry = useCallback(() => {
     retriedRef.current = false
-    lastValidatedAt = 0 // Force fresh validation on manual retry
+    lastValidatedAt = 0
     execute()
   }, [execute])
 

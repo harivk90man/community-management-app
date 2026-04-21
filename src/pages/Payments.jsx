@@ -191,8 +191,7 @@ function BoardView({ user, myVilla }) {
       .filter(p => p.billing_month === filterMonth && p.billing_year === filterYear)
       .map(p => p.villa_id)
   )
-  const unpaidVillas = villas.filter(v => !paidVillaIds.has(v.id))
-  const isDefaulterView = isPastDueDay && unpaidVillas.length > 0
+  const unpaidVillas = isBeforeGoLive ? [] : villas.filter(v => !paidVillaIds.has(v.id))
 
   async function handleBoardPayNow() {
     if (!myVilla?.id) { setPayMsg({ type: 'error', text: 'No villa linked to your account.' }); return }

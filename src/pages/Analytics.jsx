@@ -353,11 +353,11 @@ function DefaultersSection({ payments, villas, monthlyDue, user, onPaymentAdded 
   const [quickPay,    setQuickPay]    = useState(null)
   const [successMsg,  setSuccessMsg]  = useState('')
 
-  // How many months to count for "missed" — based on how far through the year we are,
-  // NOT tied to the month dropdown. Past years count all 12; future years count 0.
-  const monthsInYear = defYear < currentYear ? 12
-    : defYear > currentYear ? 0
-    : currentMonth
+  // How many months to count for "missed" — only from go-live onwards
+  const firstTrackable = defYear === GO_LIVE_YEAR ? GO_LIVE_MONTH : (defYear > GO_LIVE_YEAR ? 1 : 13)
+  const lastTrackable = defYear < currentYear ? 12 : defYear > currentYear ? 0 : currentMonth
+  const monthsInYear = Math.max(0, lastTrackable - firstTrackable + 1)
+  const preGoLive = isBeforeGoLive(defMonth, defYear)
 
   const paidIds = useMemo(() =>
     new Set(
@@ -368,18 +368,21 @@ function DefaultersSection({ payments, villas, monthlyDue, user, onPaymentAdded 
     [payments, defMonth, defYear]
   )
 
-  const defaulters = useMemo(() =>
-    villas
+  const defaulters = useMemo(() => {
+    if (preGoLive) return [] // no defaulters before go-live
+    return villas
       .filter(v => !paidIds.has(v.id))
       .filter(v => !search || v.villa_number.toLowerCase().includes(search.toLowerCase()))
       .map(v => {
-        const missed = Array.from({ length: monthsInYear }, (_, i) => i + 1)
+        const missed = Array.from({ length: 12 }, (_, i) => i + 1)
+          .filter(m => !isBeforeGoLive(m, defYear)) // only count trackable months
+          .filter(m => defYear < currentYear ? true : m <= currentMonth) // don't count future months
           .filter(m => !payments.some(p => p.villa_id === v.id && p.billing_month === m && p.billing_year === defYear))
           .length
         return { ...v, missed }
       })
-      .sort((a, b) => b.missed - a.missed),
-    [villas, paidIds, payments, defYear, monthsInYear, search]
+      .sort((a, b) => b.missed - a.missed)
+  }, [villas, paidIds, payments, defYear, monthsInYear, search, preGoLive, currentMonth]
   )
 
   return (
@@ -421,7 +424,13 @@ function DefaultersSection({ payments, villas, monthlyDue, user, onPaymentAdded 
       </div>
 
       {/* Table or empty */}
-      {defaulters.length === 0 ? (
+      {preGoLive ? (
+        <div className="py-10 text-center">
+          <p className="text-gray-400 font-medium">
+            Tracking starts from May 2026. No data for {MONTH_SHORT[defMonth - 1]} {defYear}.
+          </p>
+        </div>
+      ) : defaulters.length === 0 ? (
         <div className="py-10 text-center">
           <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-3">
             <CheckCircleIcon className="w-6 h-6 text-green-600" />
@@ -642,9 +651,18 @@ function ExpenseCatChart({ expenses, yearFilter }) {
 
 // ─── 5. resident payment status ──────────────────────────────────────────────
 
+// Go-live: May 2026 — no tracking before this
+const GO_LIVE_YEAR = 2026
+const GO_LIVE_MONTH = 5
+
+function isBeforeGoLive(month, year) {
+  return year < GO_LIVE_YEAR || (year === GO_LIVE_YEAR && month < GO_LIVE_MONTH)
+}
+
 function ResidentPaymentStatus({ payments, myVillaId, villaNumber, monthlyDue, yearFilter }) {
   const yr = yearFilter === 'all' ? new Date().getFullYear() : Number(yearFilter)
   const currentMonth = new Date().getMonth() + 1
+  const currentYear = new Date().getFullYear()
 
   const myPayments = useMemo(() =>
     payments.filter(p => p.villa_id === myVillaId && p.billing_year === yr),
@@ -656,9 +674,10 @@ function ResidentPaymentStatus({ payments, myVillaId, villaNumber, monthlyDue, y
     [myPayments]
   )
 
-  const monthsToShow = yr < new Date().getFullYear() ? 12
-    : yr > new Date().getFullYear() ? 0
-    : currentMonth
+  // Only count months from go-live onwards
+  const firstTrackableMonth = yr === GO_LIVE_YEAR ? GO_LIVE_MONTH : (yr > GO_LIVE_YEAR ? 1 : 13)
+  const lastTrackableMonth = yr < currentYear ? 12 : yr > currentYear ? 0 : currentMonth
+  const monthsToShow = Math.max(0, lastTrackableMonth - firstTrackableMonth + 1)
 
   const totalPaid = myPayments.reduce((s, p) => s + Number(p.amount), 0)
   const totalDue  = monthlyDue * monthsToShow
@@ -692,26 +711,29 @@ function ResidentPaymentStatus({ payments, myVillaId, villaNumber, monthlyDue, y
         {MONTH_SHORT.map((m, i) => {
           const monthNum = i + 1
           const paid = paidMonths.has(monthNum)
-          const isFuture = yr === new Date().getFullYear() && monthNum > currentMonth
-          const isCurrent = yr === new Date().getFullYear() && monthNum === currentMonth
+          const isFuture = yr === currentYear && monthNum > currentMonth
+          const isCurrent = yr === currentYear && monthNum === currentMonth
+          const notTracked = isBeforeGoLive(monthNum, yr) || (yr > currentYear)
           const payment = myPayments.find(p => p.billing_month === monthNum)
 
           return (
             <div
               key={m}
               className={`rounded-lg p-2.5 text-center border transition-all
-                ${isFuture ? 'bg-gray-50 border-gray-100 opacity-50' :
+                ${notTracked || isFuture ? 'bg-gray-50 border-gray-100 opacity-50' :
                   paid ? 'bg-green-50 border-green-200' :
                   isCurrent ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-300' :
                   'bg-red-50 border-red-200'}`}
             >
-              <p className={`text-xs font-semibold ${isFuture ? 'text-gray-400' : paid ? 'text-green-700' : 'text-red-600'}`}>
+              <p className={`text-xs font-semibold ${
+                notTracked || isFuture ? 'text-gray-400' :
+                paid ? 'text-green-700' : 'text-red-600'}`}>
                 {m}
               </p>
-              {paid ? (
-                <CheckMiniIcon className="w-4 h-4 text-green-500 mx-auto mt-1" />
-              ) : isFuture ? (
+              {notTracked || isFuture ? (
                 <span className="text-[10px] text-gray-400">—</span>
+              ) : paid ? (
+                <CheckMiniIcon className="w-4 h-4 text-green-500 mx-auto mt-1" />
               ) : (
                 <XMiniIcon className="w-4 h-4 text-red-400 mx-auto mt-1" />
               )}
