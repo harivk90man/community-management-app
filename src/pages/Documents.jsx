@@ -236,15 +236,28 @@ function DocumentViewer({ doc, onClose }) {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {url && (
-            <a
-              href={url}
-              download={doc.file_name ?? doc.title}
+            <button
+              onClick={async () => {
+                try {
+                  const res = await fetch(url)
+                  const blob = await res.blob()
+                  const blobUrl = URL.createObjectURL(blob)
+                  const a = document.createElement('a')
+                  a.href = blobUrl
+                  a.download = doc.file_name ?? doc.title ?? 'download'
+                  a.click()
+                  URL.revokeObjectURL(blobUrl)
+                } catch {
+                  // Fallback: open in new tab
+                  window.open(url, '_blank')
+                }
+              }}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium
                          text-gray-600 border border-gray-200 hover:border-gray-300
                          hover:bg-gray-50 rounded-lg transition"
             >
               <DownloadIcon className="w-3.5 h-3.5" /> Download
-            </a>
+            </button>
           )}
           <button onClick={onClose}
             className="p-1.5 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition">
@@ -285,14 +298,26 @@ function DocumentViewer({ doc, onClose }) {
             <p className="text-xs text-gray-400 mb-4">
               This file type (.{ext}) cannot be previewed in the browser.
             </p>
-            <a
-              href={url}
-              download={doc.file_name ?? doc.title}
+            <button
+              onClick={async () => {
+                try {
+                  const res = await fetch(url)
+                  const blob = await res.blob()
+                  const blobUrl = URL.createObjectURL(blob)
+                  const a = document.createElement('a')
+                  a.href = blobUrl
+                  a.download = doc.file_name ?? doc.title ?? 'download'
+                  a.click()
+                  URL.revokeObjectURL(blobUrl)
+                } catch {
+                  window.open(url, '_blank')
+                }
+              }}
               className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700
                          text-white text-sm font-semibold rounded-lg transition"
             >
               <DownloadIcon className="w-4 h-4" /> Download File
-            </a>
+            </button>
           </div>
         )}
       </div>
