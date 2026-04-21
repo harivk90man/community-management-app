@@ -45,12 +45,13 @@ export default function Dashboard() {
     const totalExpenses = (expensesRes.data ?? []).reduce((s, e) => s + Number(e.amount), 0)
     const fundBalance = openingBalance + totalCollected - totalExpenses
 
-    // Defaulter count: villas that haven't paid this month, past due day
+    // Defaulter count: only from May 2026 onwards (go-live month)
     const paidVillaIds = new Set((paymentsRes.data ?? []).map(p => p.villa_id))
     const totalVillas = villasRes.count ?? 0
     const paidCount = paidVillaIds.size
     const unpaidCount = totalVillas - paidCount
-    const isPastDueDay = now.getDate() > dueDay
+    const isBeforeGoLive = year < 2026 || (year === 2026 && month < 5)
+    const isPastDueDay = isBeforeGoLive ? false : now.getDate() > dueDay
 
     setStats({
       totalVillas,

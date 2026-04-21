@@ -180,9 +180,12 @@ function BoardView({ user, myVilla }) {
 
   const pending = summary.totalVillas - summary.paidCount
 
-  // Defaulter logic: after due day of the filtered month, unpaid villas = defaulters
+  // Defaulter logic: only from May 2026 onwards (go-live month)
+  const GO_LIVE_YEAR = 2026
+  const GO_LIVE_MONTH = 5 // May
+  const isBeforeGoLive = filterYear < GO_LIVE_YEAR || (filterYear === GO_LIVE_YEAR && filterMonth < GO_LIVE_MONTH)
   const isCurrentMonth = filterMonth === CUR_MONTH && filterYear === CUR_YEAR
-  const isPastDueDay = isCurrentMonth ? now.getDate() > dueDay : true // past months are always past due
+  const isPastDueDay = isBeforeGoLive ? false : (isCurrentMonth ? now.getDate() > dueDay : true)
   const paidVillaIds = new Set(
     payments
       .filter(p => p.billing_month === filterMonth && p.billing_year === filterYear)
