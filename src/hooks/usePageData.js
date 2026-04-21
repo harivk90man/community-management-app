@@ -2,15 +2,33 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 
 /**
+ * Ensure the Supabase access token is fresh before making data queries.
+ * Supabase data queries (from().select()) silently return empty arrays
+ * with expired tokens + RLS — no errors thrown. So we must check expiry
+ * and refresh BEFORE fetching data.
+ */
+async function ensureFreshToken() {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) {
+    // No session at all — try refresh, might recover from localStorage
+    const { data, error } = await supabase.auth.refreshSession()
+    return !error && !!data?.session
+  }
+  // Check if access token is expired (expires_at is seconds since epoch)
+  if (session.expires_at && session.expires_at < Date.now() / 1000) {
+    const { data, error } = await supabase.auth.refreshSession()
+    return !error && !!data?.session
+  }
+  return true // token still valid
+}
+
+/**
  * Hook for loading page data from Supabase.
  *
- * - Fetches data on mount and whenever deps change
- * - Re-fetches automatically when browser tab becomes visible after being hidden
+ * - Ensures auth token is fresh before every fetch (prevents silent empty results)
+ * - Re-fetches when browser tab/window regains focus after being away
  * - On auth errors: refreshes session once and retries
  * - Shows error with retry button on failure
- *
- * Session refresh is handled by Supabase's built-in autoRefreshToken.
- * We do NOT call refreshSession() manually to avoid race conditions.
  *
  * Usage:
  *   const { loading, error, retry } = usePageData(async () => {
@@ -35,6 +53,14 @@ export function usePageData(fetchFn, deps = []) {
     setError('')
 
     try {
+      // Ensure token is fresh — expired tokens cause silent empty results with RLS
+      const tokenOk = await ensureFreshToken()
+      if (!tokenOk) {
+        await supabase.auth.signOut().catch(() => {})
+        fetchingRef.current = false
+        if (mountedRef.current) setLoading(false)
+        return
+      }
       await fetchFn()
     } catch (err) {
       if (!mountedRef.current) { fetchingRef.current = false; return }
