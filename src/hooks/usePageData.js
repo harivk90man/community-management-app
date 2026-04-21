@@ -69,8 +69,9 @@ async function ensureValidSession() {
       lastValidatedAt = Date.now()
       return true
     } catch {
-      // Total failure — don't sign out, let user retry
-      return false
+      // Total failure (network down, timeout) — return false but don't sign out
+      // so user can retry when network recovers
+      return 'network_error'
     }
   }
 }
@@ -110,12 +111,18 @@ export function usePageData(fetchFn, deps = []) {
 
     try {
       // Validate session with the server before fetching data
-      const valid = await ensureValidSession()
-      if (!valid) {
+      const result = await ensureValidSession()
+      if (result === 'network_error') {
         if (mountedRef.current) {
-          setError('Session expired. Redirecting to login…')
+          setError('Network error. Check your connection and try again.')
           setLoading(false)
         }
+        return
+      }
+      if (!result) {
+        // Session truly expired — force sign out so ProtectedRoute redirects to login
+        await supabase.auth.signOut().catch(() => {})
+        if (mountedRef.current) setLoading(false)
         return
       }
 
@@ -129,9 +136,13 @@ export function usePageData(fetchFn, deps = []) {
       if (!retriedRef.current && (msg.includes('JWT') || msg.includes('token') || msg.includes('401') || msg.includes('timed out'))) {
         retriedRef.current = true
         lastValidatedAt = 0
-        const valid = await ensureValidSession()
-        if (!valid) {
-          if (mountedRef.current) setError('Session expired. Redirecting to login…')
+        const retryResult = await ensureValidSession()
+        if (retryResult === 'network_error') {
+          if (mountedRef.current) setError('Network error. Check your connection and try again.')
+        } else if (!retryResult) {
+          await supabase.auth.signOut().catch(() => {})
+          if (mountedRef.current) setLoading(false)
+          return
         } else {
           try {
             await fetchFn()
