@@ -71,14 +71,32 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let cancelled = false
 
-    // Step 1: restore any existing session from localStorage immediately.
-    // This is the primary initialisation path — avoids a blank loading screen.
+    // Step 1: restore session from localStorage.
+    // Use setSession() to force the client to fully initialize its internal
+    // auth state (headers, cache) — prevents stale state after hard refresh.
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (cancelled) return
       if (session?.user?.email) {
+        // Force client to reset its internal auth state
+        await supabase.auth.setSession({
+          access_token: session.access_token,
+          refresh_token: session.refresh_token,
+        }).catch(() => {})
+
         setUser(session.user)
-        try { await loadVillaProfile(session.user.email) }
-        finally { if (!cancelled) setLoading(false) }
+        try {
+          // Timeout loadVillaProfile so loading never hangs forever
+          await Promise.race([
+            loadVillaProfile(session.user.email),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10_000)),
+          ])
+        } catch {
+          // Profile load failed or timed out — still show the app, just without villa context
+          setVilla(null)
+          setVillaUser(null)
+          setRole('resident')
+        }
+        if (!cancelled) setLoading(false)
       } else {
         setUser(null)
         setVilla(null)
