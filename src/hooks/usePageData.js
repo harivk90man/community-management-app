@@ -1,25 +1,37 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 
+// Track when we last verified the token with the server
+let lastVerifiedAt = 0
+
 /**
  * Ensure the Supabase access token is fresh before making data queries.
- * Supabase data queries (from().select()) silently return empty arrays
- * with expired tokens + RLS — no errors thrown. So we must check expiry
- * and refresh BEFORE fetching data.
+ *
+ * getSession() only reads from cache and can return stale expired tokens.
+ * getUser() hits the server, which forces Supabase to auto-refresh if
+ * the token is expired. We call getUser() if we haven't verified recently
+ * (e.g., after idle/minimize), then trust the cache for subsequent calls.
  */
 async function ensureFreshToken() {
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) {
-    // No session at all — try refresh, might recover from localStorage
-    const { data, error } = await supabase.auth.refreshSession()
-    return !error && !!data?.session
+  const now = Date.now()
+
+  // If verified in the last 2 minutes, trust the cache
+  if (now - lastVerifiedAt < 2 * 60 * 1000) return true
+
+  // Hit the server — this forces auto-refresh of expired tokens
+  const { data: { user }, error } = await supabase.auth.getUser()
+  if (error || !user) {
+    // getUser failed — session is dead
+    return false
   }
-  // Check if access token is expired (expires_at is seconds since epoch)
-  if (session.expires_at && session.expires_at < Date.now() / 1000) {
-    const { data, error } = await supabase.auth.refreshSession()
-    return !error && !!data?.session
-  }
-  return true // token still valid
+
+  lastVerifiedAt = now
+  return true
+}
+
+// Reset verification timer when app resumes (called from visibility/focus handlers)
+function invalidateVerification() {
+  lastVerifiedAt = 0
 }
 
 /**
@@ -119,8 +131,9 @@ export function usePageData(fetchFn, deps = []) {
       if (!lostFocusAt) return
       const away = Date.now() - lostFocusAt
       lostFocusAt = 0
-      if (away > 3_000 && mountedRef.current) {
-        execute(true) // silent re-fetch, no loading spinner
+      if (away > 3_000) {
+        invalidateVerification() // force server check on next fetch
+        if (mountedRef.current) execute(true)
       }
     }
 
