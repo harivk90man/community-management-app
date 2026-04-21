@@ -296,6 +296,7 @@ function VillaCard({ villa: v, users = [], onEdit, onToggle, toggling, onManageU
         </div>
       )}
 
+
       {/* Push actions to bottom */}
       <div className="flex-1" />
 

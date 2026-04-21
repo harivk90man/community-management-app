@@ -34,17 +34,59 @@ function BoardView({ user }) {
     set_by: user?.email ?? '',
   })
 
+  // Association config state
+  const [assocConfig, setAssocConfig] = useState({ opening_balance: 0, due_day: 10 })
+  const [savingAssoc, setSavingAssoc] = useState(false)
+  const [assocMsg, setAssocMsg]       = useState({ type: '', text: '' })
+  const [editingAssoc, setEditingAssoc] = useState(false)
+  const [assocForm, setAssocForm]     = useState({ opening_balance: '', due_day: '10' })
+
   const fetch = useCallback(async () => {
     setLoading(true)
-    const { data } = await supabase
-      .from('dues_config')
-      .select('*')
-      .order('effective_from', { ascending: false })
-    setConfigs(data ?? [])
+    const [duesRes, assocRes] = await Promise.all([
+      supabase.from('dues_config').select('*').order('effective_from', { ascending: false }),
+      supabase.from('association_config').select('*').limit(1).single(),
+    ])
+    setConfigs(duesRes.data ?? [])
+    if (assocRes.data) {
+      setAssocConfig(assocRes.data)
+      setAssocForm({
+        opening_balance: String(assocRes.data.opening_balance ?? 0),
+        due_day: String(assocRes.data.due_day ?? 10),
+      })
+    }
     setLoading(false)
   }, [])
 
   useEffect(() => { fetch() }, [fetch])
+
+  async function handleAssocSave() {
+    setSavingAssoc(true)
+    setAssocMsg({ type: '', text: '' })
+    try {
+      const payload = {
+        opening_balance: Number(assocForm.opening_balance) || 0,
+        due_day: Math.min(28, Math.max(1, Number(assocForm.due_day) || 10)),
+        updated_at: new Date().toISOString(),
+      }
+      if (assocConfig.id) {
+        const { error: err } = await supabase.from('association_config').update(payload).eq('id', assocConfig.id)
+        if (err) throw err
+        setAssocConfig(prev => ({ ...prev, ...payload }))
+      } else {
+        const { data, error: err } = await supabase.from('association_config').insert(payload).select().single()
+        if (err) throw err
+        setAssocConfig(data)
+      }
+      setAssocMsg({ type: 'success', text: 'Association settings saved!' })
+      setEditingAssoc(false)
+      setTimeout(() => setAssocMsg({ type: '', text: '' }), 3000)
+    } catch (e) {
+      setAssocMsg({ type: 'error', text: e.message })
+    } finally {
+      setSavingAssoc(false)
+    }
+  }
 
   const current = configs[0] ?? null  // most recent by effective_from
 
@@ -81,6 +123,75 @@ function BoardView({ user }) {
           <PlusIcon className="w-4 h-4" />
           {showForm ? 'Cancel' : 'Set New Amount'}
         </button>
+      </div>
+
+      {/* Association Config */}
+      <div className="bg-white rounded-xl border border-gray-100 p-5 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-base font-semibold text-gray-800">Association Settings</h2>
+            <p className="text-xs text-gray-400 mt-0.5">Opening balance & default due date</p>
+          </div>
+          {!editingAssoc && (
+            <button onClick={() => setEditingAssoc(true)}
+              className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200
+                         hover:border-gray-300 rounded-lg transition">
+              Edit
+            </button>
+          )}
+        </div>
+
+        {assocMsg.text && (
+          <div className={`mb-4 px-4 py-3 rounded-lg text-sm ${
+            assocMsg.type === 'success' ? 'bg-green-50 border border-green-200 text-green-700'
+            : 'bg-red-50 border border-red-200 text-red-700'}`}>
+            {assocMsg.text}
+          </div>
+        )}
+
+        {editingAssoc ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Opening Balance (₹)" required>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">₹</span>
+                  <input type="number" step="0.01" value={assocForm.opening_balance}
+                    onChange={e => setAssocForm(p => ({ ...p, opening_balance: e.target.value }))}
+                    placeholder="e.g. 50000" className={inputCls + ' pl-7'} />
+                </div>
+                <p className="text-xs text-gray-400 mt-1">Total funds the association has as of April 2026</p>
+              </Field>
+              <Field label="Due Day (of every month)" required>
+                <input type="number" min="1" max="28" value={assocForm.due_day}
+                  onChange={e => setAssocForm(p => ({ ...p, due_day: e.target.value }))}
+                  className={inputCls} />
+                <p className="text-xs text-gray-400 mt-1">Residents not paying by this day = defaulter</p>
+              </Field>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button type="button" onClick={() => { setEditingAssoc(false); setAssocForm({ opening_balance: String(assocConfig.opening_balance ?? 0), due_day: String(assocConfig.due_day ?? 10) }) }}
+                className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-200
+                           hover:border-gray-300 rounded-lg transition">Cancel</button>
+              <button onClick={handleAssocSave} disabled={savingAssoc}
+                className="flex items-center gap-2 px-5 py-2 bg-green-600 hover:bg-green-700
+                           disabled:bg-green-400 text-white text-sm font-semibold rounded-lg transition">
+                {savingAssoc && <Spinner />}{savingAssoc ? 'Saving…' : 'Save Settings'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-4">
+            <div className="p-4 bg-blue-50 rounded-lg">
+              <p className="text-xs text-blue-500 font-medium">Opening Balance</p>
+              <p className="text-xl font-bold text-blue-700 mt-1">₹{fmt(assocConfig.opening_balance ?? 0)}</p>
+            </div>
+            <div className="p-4 bg-amber-50 rounded-lg">
+              <p className="text-xs text-amber-500 font-medium">Payment Due Day</p>
+              <p className="text-xl font-bold text-amber-700 mt-1">{assocConfig.due_day ?? 10}th of every month</p>
+              <p className="text-xs text-amber-400 mt-0.5">After this = defaulter</p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Current active rate */}

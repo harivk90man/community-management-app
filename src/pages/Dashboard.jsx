@@ -4,6 +4,10 @@ import { supabase } from '../lib/supabase'
 import { usePageData } from '../hooks/usePageData'
 import FetchError from '../components/FetchError'
 
+function fmt(n) {
+  return new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 }).format(n)
+}
+
 export default function Dashboard() {
   const { villa, villaUser, user, role } = useAuth()
   const displayName = villaUser?.name ?? villa?.owner_name
@@ -15,15 +19,18 @@ export default function Dashboard() {
     const month = now.getMonth() + 1
     const year = now.getFullYear()
 
-    const [villasRes, paymentsRes, complaintsRes, announcementsRes] = await Promise.all([
+    const [villasRes, paymentsRes, complaintsRes, announcementsRes, assocRes, allPaymentsRes, expensesRes] = await Promise.all([
       supabase.from('villas').select('id', { count: 'exact', head: true }).eq('is_active', true),
-      supabase.from('payments').select('id', { count: 'exact', head: true })
+      supabase.from('payments').select('id, villa_id', { count: 'exact' })
         .eq('billing_month', month).eq('billing_year', year),
       supabase.from('complaints').select('id', { count: 'exact', head: true })
         .eq('status', 'Pending'),
       supabase.from('announcements').select('id', { count: 'exact', head: true })
         .eq('is_pinned', false)
         .or(`ends_at.is.null,ends_at.gte.${now.toISOString()}`),
+      supabase.from('association_config').select('opening_balance, due_day').limit(1).single(),
+      supabase.from('payments').select('amount'),
+      supabase.from('expenses').select('amount'),
     ])
 
     if (villasRes.error) throw villasRes.error
@@ -31,15 +38,41 @@ export default function Dashboard() {
     if (complaintsRes.error) throw complaintsRes.error
     if (announcementsRes.error) throw announcementsRes.error
 
+    // Fund calculation
+    const openingBalance = Number(assocRes.data?.opening_balance ?? 0)
+    const dueDay = assocRes.data?.due_day ?? 10
+    const totalCollected = (allPaymentsRes.data ?? []).reduce((s, p) => s + Number(p.amount), 0)
+    const totalExpenses = (expensesRes.data ?? []).reduce((s, e) => s + Number(e.amount), 0)
+    const fundBalance = openingBalance + totalCollected - totalExpenses
+
+    // Defaulter count: villas that haven't paid this month, past due day
+    const paidVillaIds = new Set((paymentsRes.data ?? []).map(p => p.villa_id))
+    const totalVillas = villasRes.count ?? 0
+    const paidCount = paidVillaIds.size
+    const unpaidCount = totalVillas - paidCount
+    const isPastDueDay = now.getDate() > dueDay
+
     setStats({
-      totalVillas:         villasRes.count   ?? 0,
+      totalVillas,
       paymentsThisMonth:   paymentsRes.count ?? 0,
       openComplaints:      complaintsRes.count ?? 0,
       activeAnnouncements: announcementsRes.count ?? 0,
+      fundBalance,
+      defaulters: isPastDueDay ? unpaidCount : 0,
+      unpaidCount,
+      dueDay,
+      isPastDueDay,
     })
   }, [])
 
   const STAT_CARDS = [
+    {
+      label: 'Fund Balance',
+      value: stats ? `₹${fmt(stats.fundBalance)}` : null,
+      icon: WalletIcon,
+      bg: stats?.fundBalance >= 0 ? 'bg-green-50' : 'bg-red-50',
+      iconColor: stats?.fundBalance >= 0 ? 'text-green-600' : 'text-red-600',
+    },
     {
       label: 'Total Villas',
       value: stats?.totalVillas,
@@ -54,6 +87,19 @@ export default function Dashboard() {
       bg: 'bg-green-50',
       iconColor: 'text-green-600',
     },
+    ...(stats?.isPastDueDay && stats?.defaulters > 0 ? [{
+      label: `Defaulters (past ${stats.dueDay}th)`,
+      value: stats.defaulters,
+      icon: AlertIcon,
+      bg: 'bg-red-50',
+      iconColor: 'text-red-600',
+    }] : stats?.unpaidCount > 0 ? [{
+      label: 'Pending Payments',
+      value: stats.unpaidCount,
+      icon: FlagIcon,
+      bg: 'bg-amber-50',
+      iconColor: 'text-amber-600',
+    }] : []),
     {
       label: 'Open Complaints',
       value: stats?.openComplaints,
@@ -279,6 +325,22 @@ function MegaphoneIcon({ className }) {
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
         d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
+    </svg>
+  )
+}
+function WalletIcon({ className }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+        d="M3 10h18V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2h14a2 2 0 002-2v-4M16 14a1 1 0 100-2 1 1 0 000 2z" />
+    </svg>
+  )
+}
+function AlertIcon({ className }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
     </svg>
   )
 }

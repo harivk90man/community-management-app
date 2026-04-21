@@ -97,6 +97,7 @@ function BoardView({ user, myVilla }) {
   const [confirmDelete, setConfirmDelete] = useState(null) // payment row to delete
   const [paying, setPaying]       = useState(false)
   const [payMsg, setPayMsg]       = useState({ type: '', text: '' })
+  const [dueDay, setDueDay]       = useState(10)
 
   // filters
   const [filterVilla, setFilterVilla] = useState('')
@@ -107,7 +108,7 @@ function BoardView({ user, myVilla }) {
   const [summary, setSummary] = useState({ collected: 0, paidCount: 0, totalVillas: 0 })
 
   const { loading, error: fetchError, retry } = usePageData(async () => {
-    const [paymentsRes, villasRes] = await Promise.all([
+    const [paymentsRes, villasRes, assocRes] = await Promise.all([
       supabase
         .from('payments')
         .select('*, villas(villa_number, owner_name)')
@@ -117,11 +118,17 @@ function BoardView({ user, myVilla }) {
         .select('id, villa_number, owner_name')
         .eq('is_active', true)
         .order('villa_number'),
+      supabase
+        .from('association_config')
+        .select('due_day')
+        .limit(1)
+        .single(),
     ])
     if (paymentsRes.error) throw paymentsRes.error
     if (villasRes.error) throw villasRes.error
     setPayments(paymentsRes.data ?? [])
     setVillas(villasRes.data ?? [])
+    if (assocRes.data) setDueDay(assocRes.data.due_day ?? 10)
   }, [])
 
   // recompute summary whenever payments/filter month-year changes
@@ -172,6 +179,17 @@ function BoardView({ user, myVilla }) {
   }
 
   const pending = summary.totalVillas - summary.paidCount
+
+  // Defaulter logic: after due day of the filtered month, unpaid villas = defaulters
+  const isCurrentMonth = filterMonth === CUR_MONTH && filterYear === CUR_YEAR
+  const isPastDueDay = isCurrentMonth ? now.getDate() > dueDay : true // past months are always past due
+  const paidVillaIds = new Set(
+    payments
+      .filter(p => p.billing_month === filterMonth && p.billing_year === filterYear)
+      .map(p => p.villa_id)
+  )
+  const unpaidVillas = villas.filter(v => !paidVillaIds.has(v.id))
+  const isDefaulterView = isPastDueDay && unpaidVillas.length > 0
 
   async function handleBoardPayNow() {
     if (!myVilla?.id) { setPayMsg({ type: 'error', text: 'No villa linked to your account.' }); return }
@@ -286,10 +304,14 @@ function BoardView({ user, myVilla }) {
           icon={CurrencyIcon}
         />
         <SummaryCard
-          label="Pending Villas"
+          label={isPastDueDay && pending > 0 ? 'Defaulters' : 'Pending Villas'}
           value={pending}
-          sub={pending === 0 ? 'All caught up!' : `${pending} villa${pending !== 1 ? 's' : ''} yet to pay`}
-          color={pending > 0 ? 'amber' : 'green'}
+          sub={pending === 0
+            ? 'All caught up!'
+            : isPastDueDay
+              ? `${pending} villa${pending !== 1 ? 's' : ''} past due (${dueDay}th)`
+              : `${pending} villa${pending !== 1 ? 's' : ''} yet to pay`}
+          color={pending > 0 ? (isPastDueDay ? 'red' : 'amber') : 'green'}
           icon={FlagIcon}
         />
         <SummaryCard
@@ -300,6 +322,47 @@ function BoardView({ user, myVilla }) {
           icon={ListIcon}
         />
       </div>
+
+      {/* Defaulters / Unpaid list */}
+      {unpaidVillas.length > 0 && (
+        <div className={`rounded-xl border p-4 mb-6 ${
+          isPastDueDay
+            ? 'bg-red-50 border-red-200'
+            : 'bg-amber-50 border-amber-200'
+        }`}>
+          <div className="flex items-center gap-2 mb-3">
+            <AlertIcon className={`w-5 h-5 ${isPastDueDay ? 'text-red-600' : 'text-amber-600'}`} />
+            <h3 className={`text-sm font-bold ${isPastDueDay ? 'text-red-800' : 'text-amber-800'}`}>
+              {isPastDueDay
+                ? `Defaulters — ${MONTHS[filterMonth - 1]} ${filterYear} (past ${dueDay}th)`
+                : `Pending — ${MONTHS[filterMonth - 1]} ${filterYear} (due by ${dueDay}th)`}
+            </h3>
+            <span className={`ml-auto px-2 py-0.5 text-xs font-bold rounded-full ${
+              isPastDueDay
+                ? 'bg-red-200 text-red-800'
+                : 'bg-amber-200 text-amber-800'
+            }`}>
+              {unpaidVillas.length}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {unpaidVillas.map(v => (
+              <span key={v.id} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium ${
+                isPastDueDay
+                  ? 'bg-white border border-red-200 text-red-700'
+                  : 'bg-white border border-amber-200 text-amber-700'
+              }`}>
+                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white ${
+                  isPastDueDay ? 'bg-red-500' : 'bg-amber-500'
+                }`}>
+                  {v.villa_number}
+                </span>
+                {v.owner_name}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-4">
@@ -914,6 +977,7 @@ function SummaryCard({ label, value, sub, color, icon: Icon }) {
     green: { bg: 'bg-green-50',  icon: 'text-green-600',  val: 'text-green-700' },
     amber: { bg: 'bg-amber-50',  icon: 'text-amber-600',  val: 'text-amber-700' },
     blue:  { bg: 'bg-blue-50',   icon: 'text-blue-600',   val: 'text-blue-700'  },
+    red:   { bg: 'bg-red-50',    icon: 'text-red-600',    val: 'text-red-700'   },
   }
   const c = colors[color] ?? colors.green
   return (
@@ -1107,6 +1171,14 @@ function PayIcon({ className }) {
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
         d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+    </svg>
+  )
+}
+function AlertIcon({ className }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
     </svg>
   )
 }
