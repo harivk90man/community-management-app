@@ -168,6 +168,31 @@ export function usePageData(fetchFn, deps = []) {
     return () => { mountedRef.current = false }
   }, [execute])
 
+  // Re-fetch data when tab becomes visible again after being hidden
+  useEffect(() => {
+    let hiddenAt = 0
+    function handleVisibility() {
+      if (document.visibilityState === 'hidden') {
+        hiddenAt = Date.now()
+      } else if (document.visibilityState === 'visible' && hiddenAt > 0) {
+        const away = Date.now() - hiddenAt
+        hiddenAt = 0
+        // Only re-fetch if hidden for > 3 seconds (avoids quick tab switches)
+        // Wait 800ms for AuthContext's session refresh to complete first
+        if (away > 3_000) {
+          setTimeout(() => {
+            if (mountedRef.current) {
+              retriedRef.current = false
+              execute()
+            }
+          }, 800)
+        }
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [execute])
+
   const retry = useCallback(() => {
     retriedRef.current = false
     lastValidatedAt = 0
