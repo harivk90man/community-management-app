@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import { usePageData } from '../hooks/usePageData'
 
 // ─── constants ────────────────────────────────────────────────────────────────
 
@@ -32,7 +33,6 @@ export default function Villas() {
 function BoardView() {
   const [villas,     setVillas]     = useState([])
   const [villaUsers, setVillaUsers] = useState({}) // { villa_id: [user, ...] }
-  const [loading,    setLoading]    = useState(true)
   const [search,     setSearch]     = useState('')
   const [page,       setPage]       = useState(1)
   const [showForm,   setShowForm]   = useState(false)
@@ -40,36 +40,24 @@ function BoardView() {
   const [togglingId, setTogglingId] = useState(null)
   const [showUsers,  setShowUsers]  = useState(null) // villa id to show user management
 
-  useEffect(() => { fetchVillas() }, [])
-
-  // Reset to page 1 whenever search changes
-  useEffect(() => { setPage(1) }, [search])
-
-  async function fetchVillas() {
-    setLoading(true)
-
-    // Validate session with server before fetching
-    const { data: { user }, error: userErr } = await supabase.auth.getUser()
-    if (userErr || !user) {
-      const { error: refreshErr } = await supabase.auth.refreshSession()
-      if (refreshErr) { await supabase.auth.signOut(); return }
-    }
-
+  const { loading, error: fetchError, retry } = usePageData(async () => {
     const [villaRes, usersRes] = await Promise.all([
       supabase.from('villas').select('*').order('villa_number', { ascending: true }),
       supabase.from('villa_users').select('*').order('is_primary', { ascending: false }),
     ])
-    if (!villaRes.error) setVillas(villaRes.data ?? [])
-    if (!usersRes.error) {
-      const grouped = {}
-      for (const u of (usersRes.data ?? [])) {
-        if (!grouped[u.villa_id]) grouped[u.villa_id] = []
-        grouped[u.villa_id].push(u)
-      }
-      setVillaUsers(grouped)
+    if (villaRes.error) throw villaRes.error
+    if (usersRes.error) throw usersRes.error
+    setVillas(villaRes.data ?? [])
+    const grouped = {}
+    for (const u of (usersRes.data ?? [])) {
+      if (!grouped[u.villa_id]) grouped[u.villa_id] = []
+      grouped[u.villa_id].push(u)
     }
-    setLoading(false)
-  }
+    setVillaUsers(grouped)
+  }, [])
+
+  // Reset to page 1 whenever search changes
+  useEffect(() => { setPage(1) }, [search])
 
   async function toggleActive(v) {
     setTogglingId(v.id)

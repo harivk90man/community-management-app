@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import { usePageData } from '../hooks/usePageData'
 
 function fmt(n) {
   return new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 }).format(n)
@@ -24,7 +25,6 @@ export default function DuesConfig() {
 
 function BoardView({ user }) {
   const [configs, setConfigs]   = useState([])
-  const [loading, setLoading]   = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving]     = useState(false)
   const [error, setError]       = useState('')
@@ -41,12 +41,12 @@ function BoardView({ user }) {
   const [editingAssoc, setEditingAssoc] = useState(false)
   const [assocForm, setAssocForm]     = useState({ opening_balance: '', due_day: '10' })
 
-  const fetch = useCallback(async () => {
-    setLoading(true)
+  const { loading, error: fetchError, retry: fetchRetry } = usePageData(async () => {
     const [duesRes, assocRes] = await Promise.all([
       supabase.from('dues_config').select('*').order('effective_from', { ascending: false }),
       supabase.from('association_config').select('*').limit(1).single(),
     ])
+    if (duesRes.error) throw duesRes.error
     setConfigs(duesRes.data ?? [])
     if (assocRes.data) {
       setAssocConfig(assocRes.data)
@@ -55,10 +55,7 @@ function BoardView({ user }) {
         due_day: String(assocRes.data.due_day ?? 10),
       })
     }
-    setLoading(false)
   }, [])
-
-  useEffect(() => { fetch() }, [fetch])
 
   async function handleAssocSave() {
     setSavingAssoc(true)
