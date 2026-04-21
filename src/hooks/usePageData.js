@@ -78,24 +78,45 @@ export function usePageData(fetchFn, deps = []) {
     return () => { mountedRef.current = false }
   }, [execute])
 
-  // Re-fetch when tab becomes visible after being hidden > 3 seconds
+  // Re-fetch when app resumes after being away
+  // visibilitychange: fires on tab switch
+  // focus/blur: fires on window minimize/restore and app switch (mobile)
+  // pageshow: fires on bfcache restore
   useEffect(() => {
-    let hiddenAt = 0
+    let lostFocusAt = 0
 
-    function handleVisibility() {
-      if (document.visibilityState === 'hidden') {
-        hiddenAt = Date.now()
-      } else if (document.visibilityState === 'visible' && hiddenAt > 0) {
-        const away = Date.now() - hiddenAt
-        hiddenAt = 0
-        if (away > 3_000 && mountedRef.current) {
-          execute(true) // silent re-fetch, no loading spinner
-        }
+    function onHide() {
+      if (!lostFocusAt) lostFocusAt = Date.now()
+    }
+
+    function onShow() {
+      if (!lostFocusAt) return
+      const away = Date.now() - lostFocusAt
+      lostFocusAt = 0
+      if (away > 3_000 && mountedRef.current) {
+        execute(true) // silent re-fetch, no loading spinner
       }
     }
 
+    function handleVisibility() {
+      if (document.visibilityState === 'hidden') onHide()
+      else onShow()
+    }
+
+    function handleBlur() { onHide() }
+    function handleFocus() { onShow() }
+    function handlePageShow(e) { if (e.persisted) onShow() }
+
     document.addEventListener('visibilitychange', handleVisibility)
-    return () => document.removeEventListener('visibilitychange', handleVisibility)
+    window.addEventListener('blur', handleBlur)
+    window.addEventListener('focus', handleFocus)
+    window.addEventListener('pageshow', handlePageShow)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility)
+      window.removeEventListener('blur', handleBlur)
+      window.removeEventListener('focus', handleFocus)
+      window.removeEventListener('pageshow', handlePageShow)
+    }
   }, [execute])
 
   const retry = useCallback(() => {
