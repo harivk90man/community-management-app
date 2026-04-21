@@ -1,13 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 
-// Module-level: track when we last validated the session with the server.
+// ─── shared session refresh (prevents concurrent calls) ─────────────────────
+
+let refreshInFlight = null
+
+/**
+ * Single-flight session refresh. If a refresh is already in progress,
+ * all callers share the same promise. Prevents Supabase refresh token
+ * from being used twice (which invalidates the session).
+ */
+function safeRefreshSession() {
+  if (refreshInFlight) return refreshInFlight
+  refreshInFlight = supabase.auth.refreshSession()
+    .finally(() => { refreshInFlight = null })
+  return refreshInFlight
+}
+
+// ─── session validation ──────────────────────────────────────────────────────
+
 let lastValidatedAt = 0
 const VALIDATE_INTERVAL = 5 * 60 * 1000 // 5 minutes
 
-/**
- * Wrap a promise with a timeout so it never hangs forever.
- */
 function withTimeout(promise, ms = 10_000) {
   return Promise.race([
     promise,
@@ -15,40 +29,31 @@ function withTimeout(promise, ms = 10_000) {
   ])
 }
 
-/**
- * Check if a Supabase session's access token is expired or about to expire.
- */
 function isTokenExpired(session) {
   if (!session?.expires_at) return true
-  // expires_at is in seconds since epoch; consider expired if < 30s remaining
   return session.expires_at - 30 < Date.now() / 1000
 }
 
 /**
- * Validate the session is still good by calling getUser() (server check).
- * Only does the server call if we haven't validated in the last 5 minutes.
- * Returns true if session is valid, false if user should be signed out.
+ * Validate the session is still good. Returns:
+ *   true           — session valid
+ *   false          — session dead, should sign out
+ *   'network_error' — network issue, show retry
  */
 async function ensureValidSession() {
   const now = Date.now()
 
-  // If we validated recently, trust the cache — but only if the token isn't expired
   if (now - lastValidatedAt < VALIDATE_INTERVAL) {
     const { data: { session } } = await supabase.auth.getSession()
     if (session && !isTokenExpired(session)) return true
-    // Token expired in cache — fall through to server validation
   }
 
   try {
-    // Server-side validation with timeout
     const { data: { user }, error } = await withTimeout(supabase.auth.getUser())
 
     if (error || !user) {
-      // Token is invalid/expired — try to refresh
-      const { data: refreshData, error: refreshErr } = await withTimeout(
-        supabase.auth.refreshSession()
-      )
-      if (refreshErr || !refreshData?.session) {
+      const { data, error: refreshErr } = await withTimeout(safeRefreshSession())
+      if (refreshErr || !data?.session) {
         await supabase.auth.signOut()
         return false
       }
@@ -59,9 +64,8 @@ async function ensureValidSession() {
     lastValidatedAt = now
     return true
   } catch {
-    // Timeout or network error — try refresh as last resort
     try {
-      const { data, error } = await withTimeout(supabase.auth.refreshSession(), 8000)
+      const { data, error } = await withTimeout(safeRefreshSession(), 8000)
       if (error || !data?.session) {
         await supabase.auth.signOut()
         return false
@@ -69,35 +73,61 @@ async function ensureValidSession() {
       lastValidatedAt = Date.now()
       return true
     } catch {
-      // Total failure (network down, timeout) — return false but don't sign out
-      // so user can retry when network recovers
       return 'network_error'
     }
   }
 }
 
-/**
- * Reset the validation timer so the next fetch does a full server check.
- * Called from AuthContext on app resume / visibility change.
- */
-export function invalidateSession() {
-  lastValidatedAt = 0
-}
+// ─── app resume: single event bus ────────────────────────────────────────────
+
+const resumeListeners = new Set()
+let hiddenAt = 0
+let resumeHandled = false
 
 /**
- * Hook for loading page data from Supabase with:
- * - Server-validated session check before fetching (every 5 min)
- * - Error display with retry button
- * - Stale-session auto-recovery (refreshes token and retries)
- * - Abort on unmount (prevents setState on unmounted component)
- *
- * Usage:
- *   const { loading, error, retry } = usePageData(async () => {
- *     const { data, error } = await supabase.from('x').select('*')
- *     if (error) throw error
- *     setItems(data ?? [])
- *   }, [dependency])
+ * One global visibilitychange + focus listener. When the app resumes:
+ *  1. Refresh the session ONCE (safe, deduplicated)
+ *  2. Notify all usePageData hooks to re-fetch
  */
+function onVisible() {
+  if (resumeHandled) return
+  resumeHandled = true
+  // Reset after a tick so rapid visibility+focus events don't double-fire
+  setTimeout(() => { resumeHandled = false }, 2000)
+
+  lastValidatedAt = 0 // force re-validation
+
+  // Refresh session first, then tell all pages to re-fetch
+  safeRefreshSession().finally(() => {
+    resumeListeners.forEach(fn => fn())
+  })
+}
+
+function handleVisibilityChange() {
+  if (document.visibilityState === 'hidden') {
+    hiddenAt = Date.now()
+  } else if (document.visibilityState === 'visible' && hiddenAt > 0) {
+    const away = Date.now() - hiddenAt
+    hiddenAt = 0
+    if (away > 3_000) onVisible()
+  }
+}
+
+function handleFocus() {
+  // Only fire if we were actually hidden (hiddenAt was set)
+  if (hiddenAt > 0) {
+    const away = Date.now() - hiddenAt
+    hiddenAt = 0
+    if (away > 3_000) onVisible()
+  }
+}
+
+// Attach once at module load
+document.addEventListener('visibilitychange', handleVisibilityChange)
+window.addEventListener('focus', handleFocus)
+
+// ─── hook ────────────────────────────────────────────────────────────────────
+
 export function usePageData(fetchFn, deps = []) {
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState('')
@@ -110,7 +140,6 @@ export function usePageData(fetchFn, deps = []) {
     setError('')
 
     try {
-      // Validate session with the server before fetching data
       const result = await ensureValidSession()
       if (result === 'network_error') {
         if (mountedRef.current) {
@@ -120,7 +149,6 @@ export function usePageData(fetchFn, deps = []) {
         return
       }
       if (!result) {
-        // Session truly expired — force sign out so ProtectedRoute redirects to login
         await supabase.auth.signOut().catch(() => {})
         if (mountedRef.current) setLoading(false)
         return
@@ -129,10 +157,8 @@ export function usePageData(fetchFn, deps = []) {
       await fetchFn()
     } catch (err) {
       if (!mountedRef.current) return
-
       const msg = err?.message ?? 'Failed to load data.'
 
-      // If it's an auth error and we haven't retried yet, refresh and retry
       if (!retriedRef.current && (msg.includes('JWT') || msg.includes('token') || msg.includes('401') || msg.includes('timed out'))) {
         retriedRef.current = true
         lastValidatedAt = 0
@@ -161,6 +187,7 @@ export function usePageData(fetchFn, deps = []) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps)
 
+  // Initial fetch on mount
   useEffect(() => {
     mountedRef.current = true
     retriedRef.current = false
@@ -168,29 +195,16 @@ export function usePageData(fetchFn, deps = []) {
     return () => { mountedRef.current = false }
   }, [execute])
 
-  // Re-fetch data when tab becomes visible again after being hidden
+  // Subscribe to the global resume event — re-fetch when tab comes back
   useEffect(() => {
-    let hiddenAt = 0
-    function handleVisibility() {
-      if (document.visibilityState === 'hidden') {
-        hiddenAt = Date.now()
-      } else if (document.visibilityState === 'visible' && hiddenAt > 0) {
-        const away = Date.now() - hiddenAt
-        hiddenAt = 0
-        // Only re-fetch if hidden for > 3 seconds (avoids quick tab switches)
-        // Wait 800ms for AuthContext's session refresh to complete first
-        if (away > 3_000) {
-          setTimeout(() => {
-            if (mountedRef.current) {
-              retriedRef.current = false
-              execute()
-            }
-          }, 800)
-        }
+    function onResume() {
+      if (mountedRef.current) {
+        retriedRef.current = false
+        execute()
       }
     }
-    document.addEventListener('visibilitychange', handleVisibility)
-    return () => document.removeEventListener('visibilitychange', handleVisibility)
+    resumeListeners.add(onResume)
+    return () => { resumeListeners.delete(onResume) }
   }, [execute])
 
   const retry = useCallback(() => {

@@ -1,6 +1,5 @@
 import { createContext, useContext, useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { invalidateSession } from '../hooks/usePageData'
 
 const AuthContext = createContext(null)
 
@@ -119,53 +118,13 @@ export function AuthProvider({ children }) {
       }
     )
 
-    // Step 3: refresh session when the user returns after being away.
-    // On visibility change (web) or app resume (mobile/Capacitor), force a
-    // session refresh so data fetches don't fail with stale tokens.
-    let hiddenAt = 0
-
-    function handleResume() {
-      // Invalidate the usePageData session cache so next fetch re-validates
-      invalidateSession()
-      supabase.auth.refreshSession().then(({ data, error }) => {
-        if (cancelled) return
-        if (error || !data?.session) {
-          supabase.auth.signOut()
-        } else {
-          setUser(data.session.user)
-        }
-      })
-    }
-
-    function handleVisibility() {
-      if (document.visibilityState === 'hidden') {
-        hiddenAt = Date.now()
-      } else if (document.visibilityState === 'visible' && hiddenAt > 0) {
-        const away = Date.now() - hiddenAt
-        hiddenAt = 0
-        // Refresh if away > 5 seconds (covers tab switch, mobile background, etc.)
-        if (away > 5_000) handleResume()
-      }
-    }
-    document.addEventListener('visibilitychange', handleVisibility)
-
-    // Capacitor App resume listener (fires when mobile app returns from background)
-    // Also listen to 'focus' as a fallback for mobile webviews where visibilitychange
-    // doesn't fire reliably on app close/reopen
-    let focusTimer = null
-    function handleFocus() {
-      // Debounce: don't double-fire with visibilitychange
-      clearTimeout(focusTimer)
-      focusTimer = setTimeout(() => handleResume(), 500)
-    }
-    window.addEventListener('focus', handleFocus)
+    // Session refresh on tab resume is handled centrally by usePageData.js
+    // (single-flight refresh + re-fetch). AuthContext picks up the refreshed
+    // token via onAuthStateChange TOKEN_REFRESHED above.
 
     return () => {
       cancelled = true
       subscription.unsubscribe()
-      document.removeEventListener('visibilitychange', handleVisibility)
-      window.removeEventListener('focus', handleFocus)
-      clearTimeout(focusTimer)
     }
   }, [])
 
