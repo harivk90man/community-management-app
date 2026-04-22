@@ -72,16 +72,12 @@ export function AuthProvider({ children }) {
     let cancelled = false
 
     // Step 1: restore session from localStorage.
-    // Use setSession() to force the client to fully initialize its internal
-    // auth state (headers, cache) — prevents stale state after hard refresh.
+    // getSession() reads from localStorage and auto-refreshes expired tokens.
+    // No setSession() needed — it caused redundant _getUser() calls and
+    // SIGNED_IN events that triggered unnecessary loadVillaProfile() reloads.
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (cancelled) return
       if (session?.user?.email) {
-        // Force client to reset its internal auth state
-        await supabase.auth.setSession({
-          access_token: session.access_token,
-          refresh_token: session.refresh_token,
-        }).catch(() => {})
 
         setUser(session.user)
         try {

@@ -1,42 +1,41 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 
-// ─── session re-initialization on resume ─────────────────────────────────────
+// ─── session health check on resume ─────────────────────────────────────────
 
-let needsReinit = false
+let needsCheck = false
+let lostFocusAt = 0
+
+const SKIP_THRESHOLD_MS = 30_000 // skip re-check if hidden < 30s
 
 /**
- * Force the Supabase client to re-initialize its internal auth state
- * from localStorage. This fixes the stale in-memory auth headers that
- * cause silent empty results after idle/minimize/tab switch.
- *
- * setSession() resets the client's internal Authorization header,
- * timer state, and token cache — without a network call.
+ * Verify that we have a valid Supabase session. getSession() reads from
+ * localStorage and automatically refreshes expired tokens via the internal
+ * lock — no setSession() needed (which was causing redundant _getUser()
+ * calls, SIGNED_IN events, and lock contention).
  */
-async function reinitSession() {
-  if (!needsReinit) return true
+async function checkSession() {
+  if (!needsCheck) return true
 
   try {
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) return false
-
-    // Force the client to fully reset its internal state with this session
-    const { error } = await supabase.auth.setSession({
-      access_token: session.access_token,
-      refresh_token: session.refresh_token,
-    })
-    if (error) return false
-
-    needsReinit = false
+    const { data: { session }, error } = await supabase.auth.getSession()
+    if (error) {
+      console.warn('[usePageData] getSession error:', error.message)
+      return false
+    }
+    if (!session) {
+      console.warn('[usePageData] no session found')
+      return false
+    }
+    needsCheck = false
     return true
-  } catch {
+  } catch (e) {
+    console.warn('[usePageData] checkSession exception:', e)
     return false
   }
 }
 
 // ─── global resume detection ─────────────────────────────────────────────────
-
-let lostFocusAt = 0
 
 function onHide() {
   if (!lostFocusAt) lostFocusAt = Date.now()
@@ -44,8 +43,10 @@ function onHide() {
 
 function onResume() {
   if (!lostFocusAt) return false
+  const away = Date.now() - lostFocusAt
   lostFocusAt = 0
-  needsReinit = true // mark session for re-initialization
+  if (away < SKIP_THRESHOLD_MS) return false // was hidden briefly, token is fine
+  needsCheck = true
   return true
 }
 
@@ -75,10 +76,14 @@ export function usePageData(fetchFn, deps = []) {
     setError('')
 
     try {
-      // Re-initialize Supabase client's auth state if we've been idle
-      const sessionOk = await reinitSession()
+      // If resuming after idle, give Supabase's own _recoverAndRefresh()
+      // a moment to finish (it fires on visibilitychange before our focus handler)
+      if (isResume) await new Promise(r => setTimeout(r, 300))
+
+      const sessionOk = await checkSession()
       if (!sessionOk) {
-        await supabase.auth.signOut().catch(() => {})
+        // Don't silently sign out — show an error so the user can retry
+        if (mountedRef.current) setError('Session expired. Please refresh or log in again.')
         fetchingRef.current = false
         if (mountedRef.current) setLoading(false)
         return
@@ -93,11 +98,13 @@ export function usePageData(fetchFn, deps = []) {
         || msg.includes('401') || msg.includes('403')
 
       if (isAuthError) {
-        // Force full re-init and retry
-        needsReinit = true
-        const ok = await reinitSession()
+        console.warn('[usePageData] auth error, retrying after delay:', msg)
+        // Wait for Supabase auto-refresh to stabilize, then retry once
+        await new Promise(r => setTimeout(r, 1000))
+        needsCheck = true
+        const ok = await checkSession()
         if (!ok) {
-          await supabase.auth.signOut().catch(() => {})
+          if (mountedRef.current) setError('Session expired. Please refresh or log in again.')
           fetchingRef.current = false
           if (mountedRef.current) setLoading(false)
           return
@@ -126,11 +133,10 @@ export function usePageData(fetchFn, deps = []) {
     return () => { mountedRef.current = false }
   }, [execute])
 
-  // Re-fetch when app resumes — listen for focus to detect any return
+  // Re-fetch when app resumes after meaningful inactivity
   useEffect(() => {
     function handleFocus() {
-      // If we were hidden, needsReinit is already true from the global listener
-      if (needsReinit && mountedRef.current) {
+      if (needsCheck && mountedRef.current) {
         execute(true)
       }
     }
@@ -140,7 +146,7 @@ export function usePageData(fetchFn, deps = []) {
 
   const retry = useCallback(() => {
     fetchingRef.current = false
-    needsReinit = true // force re-init on manual retry too
+    needsCheck = true // force session check on manual retry
     execute(false)
   }, [execute])
 
