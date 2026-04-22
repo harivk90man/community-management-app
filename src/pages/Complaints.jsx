@@ -458,15 +458,13 @@ function ResidentView({ myVilla }) {
   const [showForm, setShowForm]     = useState(false)
 
   const { loading, error: fetchError, retry } = usePageData(async () => {
-    if (!myVilla?.id) return
     const { data, error } = await supabase
       .from('complaints')
-      .select('*')
-      .eq('villa_id', myVilla.id)
+      .select('*, villas(villa_number, owner_name)')
       .order('created_at', { ascending: false })
     if (error) throw error
     setComplaints(data ?? [])
-  }, [myVilla?.id])
+  }, [])
 
   function onRaised(newC) {
     setComplaints(prev => [newC, ...prev])
@@ -485,8 +483,8 @@ function ResidentView({ myVilla }) {
     <div className="p-6 max-w-3xl">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">My Complaints & Requests</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Villa {myVilla.villa_number}</p>
+          <h1 className="text-xl font-bold text-gray-900">Complaints & Requests</h1>
+          <p className="text-sm text-gray-500 mt-0.5">{complaints.length} total{myVilla ? ` · Villa ${myVilla.villa_number}` : ''}</p>
         </div>
         <button
           onClick={() => setShowForm(true)}
@@ -516,7 +514,7 @@ function ResidentView({ myVilla }) {
       ) : (
         <div className="space-y-3">
           {complaints.map(c => (
-            <ResidentComplaintCard key={c.id} complaint={c} />
+            <ResidentComplaintCard key={c.id} complaint={c} myVillaId={myVilla?.id} />
           ))}
         </div>
       )}
@@ -534,11 +532,13 @@ function ResidentView({ myVilla }) {
 
 // ─── resident complaint card ──────────────────────────────────────────────────
 
-function ResidentComplaintCard({ complaint: c }) {
+function ResidentComplaintCard({ complaint: c, myVillaId }) {
   const [expanded, setExpanded] = useState(false)
+  const villaLabel = c.villas?.villa_number ? `Villa ${c.villas.villa_number}` : null
+  const isMine = c.villa_id === myVillaId
 
   return (
-    <div className="bg-white rounded-xl border border-gray-100 p-5">
+    <div className={`bg-white rounded-xl border p-5 ${isMine ? 'border-green-200' : 'border-gray-100'}`}>
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2 mb-2">
@@ -548,6 +548,11 @@ function ResidentComplaintCard({ complaint: c }) {
             {c.category && (
               <span className="px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-500 rounded-full">
                 {c.category}
+              </span>
+            )}
+            {villaLabel && (
+              <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${isMine ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                {villaLabel}{isMine ? ' (You)' : ''}
               </span>
             )}
           </div>

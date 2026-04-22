@@ -112,7 +112,7 @@ export default function Layout() {
       <div className="flex-1 flex flex-col min-w-0">
 
         {/* Top bar */}
-        <header className="h-14 bg-white border-b border-gray-100 flex items-center justify-between px-4 md:px-6 shrink-0">
+        <header className="h-14 bg-white border-b border-gray-100 flex items-center justify-between px-4 md:px-6 shrink-0 safe-top">
 
           {/* Mobile: logo + name */}
           <div className="flex items-center gap-2.5 md:hidden">
@@ -282,7 +282,7 @@ export default function Layout() {
 
       {/* ── Mobile Bottom Navigation ── */}
       <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200
-                      md:hidden flex items-stretch h-16">
+                      md:hidden flex items-stretch h-16 safe-bottom">
         {BOTTOM_NAV.map(item => (
           <BottomNavItem key={item.to} {...item} />
         ))}
