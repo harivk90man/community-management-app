@@ -22,15 +22,15 @@ const EMPTY_FORM = {
 // ─── main page ────────────────────────────────────────────────────────────────
 
 export default function Villas() {
-  const { villa: myVilla, role } = useAuth()
+  const { role } = useAuth()
 
   if (role === 'board') return <BoardView />
-  return <ResidentView villa={myVilla} />
+  return <BoardView readOnly />
 }
 
 // ─── board view ───────────────────────────────────────────────────────────────
 
-function BoardView() {
+function BoardView({ readOnly = false }) {
   const [villas,     setVillas]     = useState([])
   const [villaUsers, setVillaUsers] = useState({}) // { villa_id: [user, ...] }
   const [search,     setSearch]     = useState('')
@@ -114,12 +114,14 @@ function BoardView() {
         </div>
         <div className="flex items-center gap-3">
           <SearchInput value={search} onChange={setSearch} />
-          <button onClick={openAdd}
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700
-                       text-white text-sm font-semibold rounded-lg transition shrink-0">
-            <PlusIcon className="w-4 h-4" />
-            Add Villa
-          </button>
+          {!readOnly && (
+            <button onClick={openAdd}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700
+                         text-white text-sm font-semibold rounded-lg transition shrink-0">
+              <PlusIcon className="w-4 h-4" />
+              Add Villa
+            </button>
+          )}
         </div>
       </div>
 
@@ -136,6 +138,7 @@ function BoardView() {
                 key={v.id}
                 villa={v}
                 users={villaUsers[v.id] ?? []}
+                readOnly={readOnly}
                 onEdit={() => openEdit(v)}
                 onToggle={() => toggleActive(v)}
                 toggling={togglingId === v.id}
@@ -175,13 +178,13 @@ function BoardView() {
         </>
       )}
 
-      {/* Add / Edit modal */}
-      {showForm && (
+      {/* Add / Edit modal — board only */}
+      {!readOnly && showForm && (
         <VillaFormModal editing={editing} onSaved={onSaved} onClose={closeForm} />
       )}
 
-      {/* Manage Users modal */}
-      {showUsers && (
+      {/* Manage Users modal — board only */}
+      {!readOnly && showUsers && (
         <ManageUsersModal
           villa={villas.find(v => v.id === showUsers)}
           users={villaUsers[showUsers] ?? []}
@@ -197,7 +200,7 @@ function BoardView() {
 
 // ─── villa card ────────────────────────────────────────────────────────────────
 
-function VillaCard({ villa: v, users = [], onEdit, onToggle, toggling, onManageUsers }) {
+function VillaCard({ villa: v, users = [], readOnly, onEdit, onToggle, toggling, onManageUsers }) {
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm
                     hover:shadow-md hover:-translate-y-0.5 transition-all duration-200
@@ -288,27 +291,29 @@ function VillaCard({ villa: v, users = [], onEdit, onToggle, toggling, onManageU
       {/* Push actions to bottom */}
       <div className="flex-1" />
 
-      {/* Action buttons */}
-      <div className="grid grid-cols-3 gap-2 px-5 py-4 border-t border-gray-50">
-        <button onClick={onEdit}
-          className="py-2 text-xs font-semibold text-gray-600 bg-gray-50
-                     hover:bg-gray-100 rounded-lg transition">
-          Edit
-        </button>
-        <button onClick={onManageUsers}
-          className="py-2 text-xs font-semibold text-purple-600 bg-purple-50
-                     hover:bg-purple-100 rounded-lg transition">
-          Users
-        </button>
-        <button onClick={onToggle} disabled={toggling}
-          className={`py-2 text-xs font-semibold rounded-lg transition disabled:opacity-50 ${
-            v.is_active
-              ? 'text-red-600 bg-red-50 hover:bg-red-100'
-              : 'text-green-600 bg-green-50 hover:bg-green-100'
-          }`}>
-          {toggling ? '…' : v.is_active ? 'Deactivate' : 'Activate'}
-        </button>
-      </div>
+      {/* Action buttons — board only */}
+      {!readOnly && (
+        <div className="grid grid-cols-3 gap-2 px-5 py-4 border-t border-gray-50">
+          <button onClick={onEdit}
+            className="py-2 text-xs font-semibold text-gray-600 bg-gray-50
+                       hover:bg-gray-100 rounded-lg transition">
+            Edit
+          </button>
+          <button onClick={onManageUsers}
+            className="py-2 text-xs font-semibold text-purple-600 bg-purple-50
+                       hover:bg-purple-100 rounded-lg transition">
+            Users
+          </button>
+          <button onClick={onToggle} disabled={toggling}
+            className={`py-2 text-xs font-semibold rounded-lg transition disabled:opacity-50 ${
+              v.is_active
+                ? 'text-red-600 bg-red-50 hover:bg-red-100'
+                : 'text-green-600 bg-green-50 hover:bg-green-100'
+            }`}>
+            {toggling ? '…' : v.is_active ? 'Deactivate' : 'Activate'}
+          </button>
+        </div>
+      )}
     </div>
   )
 }
