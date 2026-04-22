@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 
-// ─── session health check on resume ─────────────────────────────────────────
+// ─── global resume tracking ─────────────────────────────────────────────────
 
-let needsCheck = false
-let lostFocusAt = 0
-
-const SKIP_THRESHOLD_MS = 30_000 // skip re-check if hidden < 30s
+// Timestamp of the most recent resume (tab visible / window focus).
+// Every usePageData instance checks this against its own last-fetch time
+// so that *navigation after restore* also gets a session check + re-fetch.
+let lastResumeAt = 0
+let lostFocusAt  = 0
 
 /**
  * Verify that we have a valid Supabase session. getSession() reads from
@@ -15,8 +16,6 @@ const SKIP_THRESHOLD_MS = 30_000 // skip re-check if hidden < 30s
  * calls, SIGNED_IN events, and lock contention).
  */
 async function checkSession() {
-  if (!needsCheck) return true
-
   try {
     const { data: { session }, error } = await supabase.auth.getSession()
     if (error) {
@@ -27,7 +26,6 @@ async function checkSession() {
       console.warn('[usePageData] no session found')
       return false
     }
-    needsCheck = false
     return true
   } catch (e) {
     console.warn('[usePageData] checkSession exception:', e)
@@ -43,10 +41,8 @@ function onHide() {
 
 function onResume() {
   if (!lostFocusAt) return false
-  const away = Date.now() - lostFocusAt
   lostFocusAt = 0
-  if (away < SKIP_THRESHOLD_MS) return false // was hidden briefly, token is fine
-  needsCheck = true
+  lastResumeAt = Date.now()
   return true
 }
 
@@ -64,8 +60,9 @@ window.addEventListener('pageshow', (e) => { if (e.persisted) onResume() })
 export function usePageData(fetchFn, deps = []) {
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState('')
-  const mountedRef  = useRef(true)
-  const fetchingRef = useRef(false)
+  const mountedRef    = useRef(true)
+  const fetchingRef   = useRef(false)
+  const lastFetchRef  = useRef(0)  // when this hook last fetched successfully
 
   const execute = useCallback(async (isResume = false) => {
     if (!mountedRef.current) return
@@ -76,20 +73,26 @@ export function usePageData(fetchFn, deps = []) {
     setError('')
 
     try {
-      // If resuming after idle, give Supabase's own _recoverAndRefresh()
-      // a moment to finish (it fires on visibilitychange before our focus handler)
-      if (isResume) await new Promise(r => setTimeout(r, 300))
+      // Check if a resume happened since our last fetch (covers both
+      // the active page AND any page navigated to after restore)
+      const needsSessionCheck = lastResumeAt > lastFetchRef.current
 
-      const sessionOk = await checkSession()
-      if (!sessionOk) {
-        // Don't silently sign out — show an error so the user can retry
-        if (mountedRef.current) setError('Session expired. Please refresh or log in again.')
-        fetchingRef.current = false
-        if (mountedRef.current) setLoading(false)
-        return
+      if (needsSessionCheck) {
+        // Give Supabase's own _recoverAndRefresh() a moment to finish
+        // (it fires on visibilitychange before our focus/mount handler)
+        if (isResume) await new Promise(r => setTimeout(r, 300))
+
+        const sessionOk = await checkSession()
+        if (!sessionOk) {
+          if (mountedRef.current) setError('Session expired. Please refresh or log in again.')
+          fetchingRef.current = false
+          if (mountedRef.current) setLoading(false)
+          return
+        }
       }
 
       await fetchFn()
+      lastFetchRef.current = Date.now()
     } catch (err) {
       if (!mountedRef.current) { fetchingRef.current = false; return }
 
@@ -99,9 +102,7 @@ export function usePageData(fetchFn, deps = []) {
 
       if (isAuthError) {
         console.warn('[usePageData] auth error, retrying after delay:', msg)
-        // Wait for Supabase auto-refresh to stabilize, then retry once
         await new Promise(r => setTimeout(r, 1000))
-        needsCheck = true
         const ok = await checkSession()
         if (!ok) {
           if (mountedRef.current) setError('Session expired. Please refresh or log in again.')
@@ -111,6 +112,7 @@ export function usePageData(fetchFn, deps = []) {
         }
         try {
           await fetchFn()
+          lastFetchRef.current = Date.now()
         } catch (retryErr) {
           if (mountedRef.current) {
             setError(retryErr?.message ?? 'Failed to load data after retry.')
@@ -133,10 +135,11 @@ export function usePageData(fetchFn, deps = []) {
     return () => { mountedRef.current = false }
   }, [execute])
 
-  // Re-fetch when app resumes after meaningful inactivity
+  // Re-fetch when app resumes (active page only — navigation is covered
+  // by the mount effect above since lastResumeAt > lastFetchRef)
   useEffect(() => {
     function handleFocus() {
-      if (needsCheck && mountedRef.current) {
+      if (lastResumeAt > lastFetchRef.current && mountedRef.current) {
         execute(true)
       }
     }
@@ -146,7 +149,7 @@ export function usePageData(fetchFn, deps = []) {
 
   const retry = useCallback(() => {
     fetchingRef.current = false
-    needsCheck = true // force session check on manual retry
+    lastFetchRef.current = 0 // force session check on manual retry
     execute(false)
   }, [execute])
 

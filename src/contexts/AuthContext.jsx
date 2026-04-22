@@ -1,4 +1,4 @@
-import { createContext, useContext, useCallback, useEffect, useMemo, useState } from 'react'
+import { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 
 const AuthContext = createContext(null)
@@ -9,6 +9,7 @@ export function AuthProvider({ children }) {
   const [villaUser, setVillaUser] = useState(null)  // the logged-in person's row from villa_users
   const [role, setRole] = useState(null)         // 'board' | 'resident'
   const [loading, setLoading] = useState(true)
+  const villaRef = useRef(null) // track villa outside the closure for onAuthStateChange
 
   async function loadVillaProfile(authEmail) {
     // Phone-based logins use {digits}@villaapp.local as the Supabase auth email
@@ -68,6 +69,9 @@ export function AuthProvider({ children }) {
     setRole(villaData.is_board_member ? 'board' : 'resident')
   }
 
+  // Keep ref in sync so the onAuthStateChange closure can read current villa
+  useEffect(() => { villaRef.current = villa }, [villa])
+
   useEffect(() => {
     let cancelled = false
 
@@ -122,10 +126,14 @@ export function AuthProvider({ children }) {
           return
         }
 
-        // SIGNED_IN — full profile reload needed
-        // TOKEN_REFRESHED — user didn't change, just update the user object
+        // TOKEN_REFRESHED — user didn't change, just update the user object.
+        // SIGNED_IN — only reload profile if we don't have one yet.
+        // Supabase's _recoverAndRefresh() fires SIGNED_IN on every tab restore;
+        // re-running loadVillaProfile() each time can race with page queries
+        // and temporarily set villa=null if the DB call fails, breaking
+        // navigation to pages that depend on villa context.
         setUser(session?.user ?? null)
-        if (event === 'SIGNED_IN' && session?.user?.email) {
+        if (event === 'SIGNED_IN' && session?.user?.email && !villaRef.current) {
           await loadVillaProfile(session.user.email)
         }
         setLoading(false)
