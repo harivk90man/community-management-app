@@ -224,9 +224,17 @@ function VillaCard({ villa: v, users = [], readOnly, onEdit, onToggle, toggling,
         </span>
       </div>
 
-      {/* Owner name */}
-      <div className="px-5 pb-1">
-        <h3 className="font-bold text-gray-900 text-base leading-snug truncate">{v.owner_name}</h3>
+      {/* Owner name + call button */}
+      <div className="px-5 pb-1 flex items-center gap-2">
+        <h3 className="font-bold text-gray-900 text-base leading-snug truncate flex-1">{v.owner_name}</h3>
+        {v.phone && (
+          <a href={`tel:${v.phone}`} onClick={e => e.stopPropagation()}
+            title={`Call ${v.owner_name}`}
+            className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center
+                       bg-green-50 text-green-600 hover:bg-green-100 transition">
+            <PhoneIcon className="w-3.5 h-3.5" />
+          </a>
+        )}
       </div>
 
       {/* Registered users */}

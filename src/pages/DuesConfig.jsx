@@ -35,11 +35,11 @@ function BoardView({ user }) {
   })
 
   // Association config state
-  const [assocConfig, setAssocConfig] = useState({ opening_balance: 0, due_day: 10 })
+  const [assocConfig, setAssocConfig] = useState({ opening_balance: 0, due_day: 10, upi_id: '' })
   const [savingAssoc, setSavingAssoc] = useState(false)
   const [assocMsg, setAssocMsg]       = useState({ type: '', text: '' })
   const [editingAssoc, setEditingAssoc] = useState(false)
-  const [assocForm, setAssocForm]     = useState({ opening_balance: '', due_day: '10' })
+  const [assocForm, setAssocForm]     = useState({ opening_balance: '', due_day: '10', upi_id: '' })
 
   const { loading, error: fetchError, retry: fetchRetry } = usePageData(async () => {
     const [duesRes, assocRes] = await Promise.all([
@@ -53,6 +53,7 @@ function BoardView({ user }) {
       setAssocForm({
         opening_balance: String(assocRes.data.opening_balance ?? 0),
         due_day: String(assocRes.data.due_day ?? 10),
+        upi_id: assocRes.data.upi_id ?? '',
       })
     }
   }, [])
@@ -64,6 +65,7 @@ function BoardView({ user }) {
       const payload = {
         opening_balance: Number(assocForm.opening_balance) || 0,
         due_day: Math.min(28, Math.max(1, Number(assocForm.due_day) || 10)),
+        upi_id: assocForm.upi_id.trim() || null,
         updated_at: new Date().toISOString(),
       }
       if (assocConfig.id) {
@@ -165,6 +167,12 @@ function BoardView({ user }) {
                 <p className="text-xs text-gray-400 mt-1">Residents not paying by this day = defaulter</p>
               </Field>
             </div>
+            <Field label="UPI ID (for Pay Now)">
+              <input type="text" value={assocForm.upi_id}
+                onChange={e => setAssocForm(p => ({ ...p, upi_id: e.target.value }))}
+                placeholder="e.g. yourname@okhdfcbank" className={inputCls} />
+              <p className="text-xs text-gray-400 mt-1">Residents will pay to this UPI ID via the Pay Now button</p>
+            </Field>
             <div className="flex justify-end gap-3">
               <button type="button" onClick={() => { setEditingAssoc(false); setAssocForm({ opening_balance: String(assocConfig.opening_balance ?? 0), due_day: String(assocConfig.due_day ?? 10) }) }}
                 className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-200
@@ -177,15 +185,25 @@ function BoardView({ user }) {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-4">
-            <div className="p-4 bg-blue-50 rounded-lg">
-              <p className="text-xs text-blue-500 font-medium">Opening Balance</p>
-              <p className="text-xl font-bold text-blue-700 mt-1">₹{fmt(assocConfig.opening_balance ?? 0)}</p>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="p-4 bg-blue-50 rounded-lg">
+                <p className="text-xs text-blue-500 font-medium">Opening Balance</p>
+                <p className="text-xl font-bold text-blue-700 mt-1">₹{fmt(assocConfig.opening_balance ?? 0)}</p>
+              </div>
+              <div className="p-4 bg-amber-50 rounded-lg">
+                <p className="text-xs text-amber-500 font-medium">Payment Due Day</p>
+                <p className="text-xl font-bold text-amber-700 mt-1">{assocConfig.due_day ?? 10}th of every month</p>
+                <p className="text-xs text-amber-400 mt-0.5">After this = defaulter</p>
+              </div>
             </div>
-            <div className="p-4 bg-amber-50 rounded-lg">
-              <p className="text-xs text-amber-500 font-medium">Payment Due Day</p>
-              <p className="text-xl font-bold text-amber-700 mt-1">{assocConfig.due_day ?? 10}th of every month</p>
-              <p className="text-xs text-amber-400 mt-0.5">After this = defaulter</p>
+            <div className="p-4 bg-green-50 rounded-lg">
+              <p className="text-xs text-green-600 font-medium">UPI ID (Pay Now)</p>
+              {assocConfig.upi_id ? (
+                <p className="text-base font-bold text-green-800 font-mono mt-1 break-all">{assocConfig.upi_id}</p>
+              ) : (
+                <p className="text-sm text-green-400 mt-1 italic">Not set — residents cannot use Pay Now</p>
+              )}
             </div>
           </div>
         )}
