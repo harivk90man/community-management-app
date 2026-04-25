@@ -47,7 +47,9 @@ function BoardView({ readOnly = false }) {
     ])
     if (villaRes.error) throw villaRes.error
     if (usersRes.error) throw usersRes.error
-    setVillas(villaRes.data ?? [])
+    setVillas((villaRes.data ?? []).sort((a, b) =>
+      a.villa_number.localeCompare(b.villa_number, undefined, { numeric: true })
+    ))
     const grouped = {}
     for (const u of (usersRes.data ?? [])) {
       if (!grouped[u.villa_id]) grouped[u.villa_id] = []

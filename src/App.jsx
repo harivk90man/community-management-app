@@ -23,6 +23,7 @@ import Expenses from './pages/Expenses'
 import DuesConfig from './pages/DuesConfig'
 import Analytics from './pages/Analytics'
 import Calendar from './pages/Calendar'
+import Reports from './pages/Reports'
 
 export default function App() {
   return (
@@ -63,6 +64,7 @@ export default function App() {
             <Route path="vendors"       element={<Vendors />} />
             <Route path="polls"         element={<Polls />} />
             <Route path="analytics"     element={<Analytics />} />
+            <Route path="reports"       element={<Reports />} />
             <Route path="calendar"      element={<Calendar />} />
 
             {/* Board-only routes */}
