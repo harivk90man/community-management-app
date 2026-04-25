@@ -588,8 +588,9 @@ function ResidentView({ myVilla, villaUser, user }) {
     setShowRecordModal(false); setUpiModalData(null); setShowUpiModal(false)
   }
 
-  function handleResubmit(rejected) {
-    // Pre-fill the UPI modal with the rejected payment's data, then dismiss the rejected card
+  async function handleResubmit(rejected) {
+    // Delete the old rejected record from DB, then open Pay Now modal
+    await supabase.from('payments').delete().eq('id', rejected.id)
     setRejectedPayments(prev => prev.filter(p => p.id !== rejected.id))
     setShowUpiModal(true)
   }

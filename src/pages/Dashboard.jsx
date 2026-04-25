@@ -40,13 +40,15 @@ export default function Dashboard() {
       supabase.from('payments').select('id, amount, billing_month, billing_year, mode, initiated_by, villas(villa_number, owner_name)')
         .eq('status', 'pending').order('created_at', { ascending: false }).limit(10),
     ]
-    // Resident-specific: my pending + rejected
+    // Resident-specific: my pending, rejected, and approved (for filtering stale rejects)
     if (villa?.id) {
       queries.push(
         supabase.from('payments').select('id, amount, billing_month, billing_year, mode')
           .eq('villa_id', villa.id).eq('status', 'pending').order('created_at', { ascending: false }),
         supabase.from('payments').select('id, amount, billing_month, billing_year, mode, reject_reason, rejected_by')
           .eq('villa_id', villa.id).eq('status', 'rejected').order('created_at', { ascending: false }),
+        supabase.from('payments').select('billing_month, billing_year')
+          .eq('villa_id', villa.id).eq('status', 'approved'),
       )
     }
 
@@ -59,8 +61,19 @@ export default function Dashboard() {
     if (announcementsRes.error) throw announcementsRes.error
 
     setPendingApprovals(pendingRes.data ?? [])
-    if (results[8]) setMyPending(results[8].data ?? [])
-    if (results[9]) setMyRejected(results[9].data ?? [])
+    const myPendingData  = results[8]?.data ?? []
+    const myRejectedData = results[9]?.data ?? []
+    const myApprovedData = results[10]?.data ?? []
+    setMyPending(myPendingData)
+
+    // Filter out rejected payments where a newer approved or pending payment already exists for the same month
+    const resolvedMonths = new Set([
+      ...myApprovedData.map(p => `${p.billing_month}-${p.billing_year}`),
+      ...myPendingData.map(p => `${p.billing_month}-${p.billing_year}`),
+    ])
+    setMyRejected(myRejectedData.filter(p =>
+      !resolvedMonths.has(`${p.billing_month}-${p.billing_year}`)
+    ))
 
     // Fund calculation
     const openingBalance = Number(assocRes.data?.opening_balance ?? 0)
