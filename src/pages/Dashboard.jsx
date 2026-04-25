@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import { usePageData } from '../hooks/usePageData'
@@ -14,29 +15,52 @@ export default function Dashboard() {
   const isPhoneUser = user?.email?.endsWith('@villaapp.local')
   const [stats, setStats] = useState(null)
 
+  const [pendingApprovals, setPendingApprovals] = useState([])
+  const [myPending, setMyPending]               = useState([])
+  const [myRejected, setMyRejected]             = useState([])
+
   const { loading, error: fetchError, retry } = usePageData(async () => {
     const now = new Date()
     const month = now.getMonth() + 1
     const year = now.getFullYear()
 
-    const [villasRes, paymentsRes, complaintsRes, announcementsRes, assocRes, allPaymentsRes, expensesRes] = await Promise.all([
+    const queries = [
       supabase.from('villas').select('id', { count: 'exact', head: true }).eq('is_active', true),
       supabase.from('payments').select('id, villa_id', { count: 'exact' })
-        .eq('billing_month', month).eq('billing_year', year),
+        .eq('billing_month', month).eq('billing_year', year).eq('status', 'approved'),
       supabase.from('complaints').select('id', { count: 'exact', head: true })
         .eq('status', 'Pending'),
       supabase.from('announcements').select('id', { count: 'exact', head: true })
         .eq('is_pinned', false)
         .or(`ends_at.is.null,ends_at.gte.${now.toISOString()}`),
       supabase.from('association_config').select('opening_balance, due_day').limit(1).single(),
-      supabase.from('payments').select('amount'),
+      supabase.from('payments').select('amount').eq('status', 'approved'),
       supabase.from('expenses').select('amount'),
-    ])
+      // Pending approvals for board
+      supabase.from('payments').select('id, amount, billing_month, billing_year, mode, initiated_by, villas(villa_number, owner_name)')
+        .eq('status', 'pending').order('created_at', { ascending: false }).limit(10),
+    ]
+    // Resident-specific: my pending + rejected
+    if (villa?.id) {
+      queries.push(
+        supabase.from('payments').select('id, amount, billing_month, billing_year, mode')
+          .eq('villa_id', villa.id).eq('status', 'pending').order('created_at', { ascending: false }),
+        supabase.from('payments').select('id, amount, billing_month, billing_year, mode, reject_reason, rejected_by')
+          .eq('villa_id', villa.id).eq('status', 'rejected').order('created_at', { ascending: false }),
+      )
+    }
+
+    const results = await Promise.all(queries)
+    const [villasRes, paymentsRes, complaintsRes, announcementsRes, assocRes, allPaymentsRes, expensesRes, pendingRes] = results
 
     if (villasRes.error) throw villasRes.error
     if (paymentsRes.error) throw paymentsRes.error
     if (complaintsRes.error) throw complaintsRes.error
     if (announcementsRes.error) throw announcementsRes.error
+
+    setPendingApprovals(pendingRes.data ?? [])
+    if (results[8]) setMyPending(results[8].data ?? [])
+    if (results[9]) setMyRejected(results[9].data ?? [])
 
     // Fund calculation
     const openingBalance = Number(assocRes.data?.opening_balance ?? 0)
@@ -148,6 +172,16 @@ export default function Dashboard() {
         ))}
       </div>
 
+      {/* Payment status banners */}
+      {!loading && (
+        <PaymentAlerts
+          role={role}
+          pendingApprovals={pendingApprovals}
+          myPending={myPending}
+          myRejected={myRejected}
+        />
+      )}
+
       {/* Quick info */}
       <div className="mt-8 bg-white rounded-xl border border-gray-100 p-6">
         <h2 className="text-base font-semibold text-gray-800 mb-4">Your Villa Details</h2>
@@ -258,6 +292,130 @@ function RecoveryEmailCard() {
         </button>
       </form>
     </div>
+  )
+}
+
+const MONTHS = [
+  'January','February','March','April','May','June',
+  'July','August','September','October','November','December',
+]
+
+function PaymentAlerts({ role, pendingApprovals, myPending, myRejected }) {
+  const navigate = useNavigate()
+  const hasAny = pendingApprovals.length > 0 || myPending.length > 0 || myRejected.length > 0
+  if (!hasAny) return null
+
+  function fmt(n) {
+    return new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 }).format(n)
+  }
+
+  return (
+    <div className="mt-6 space-y-4">
+
+      {/* Board: pending approvals */}
+      {role === 'board' && pendingApprovals.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <ClockIcon className="w-5 h-5 text-amber-600" />
+            <h3 className="text-sm font-bold text-amber-800">Pending Approvals</h3>
+            <span className="ml-auto px-2 py-0.5 text-xs font-bold bg-amber-200 text-amber-800 rounded-full">
+              {pendingApprovals.length}
+            </span>
+          </div>
+          <div className="space-y-2 max-h-48 overflow-y-auto">
+            {pendingApprovals.map(p => (
+              <div key={p.id} className="bg-white border border-amber-100 rounded-lg px-4 py-2.5
+                                         flex items-center gap-3 text-sm">
+                <span className="w-7 h-7 rounded-full bg-green-600 flex items-center justify-center
+                                 text-white font-black text-[10px] shrink-0">
+                  {p.villas?.villa_number ?? '?'}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <span className="font-medium text-gray-900">{p.villas?.owner_name ?? '—'}</span>
+                  <span className="text-gray-400 mx-1.5">·</span>
+                  <span className="font-semibold text-gray-900">₹{fmt(p.amount)}</span>
+                  <span className="text-gray-400 mx-1.5">·</span>
+                  <span className="text-gray-500">{MONTHS[p.billing_month - 1]?.slice(0, 3)} {p.billing_year}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <button onClick={() => navigate('/payments')}
+            className="mt-3 w-full py-2 text-sm font-semibold text-amber-700 bg-amber-100
+                       hover:bg-amber-200 rounded-lg transition text-center">
+            Review all in Payments →
+          </button>
+        </div>
+      )}
+
+      {/* Resident: my pending payments */}
+      {myPending.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <ClockIcon className="w-5 h-5 text-amber-600" />
+            <h3 className="text-sm font-bold text-amber-800">Your Pending Payments</h3>
+            <span className="ml-auto px-2 py-0.5 text-xs font-bold bg-amber-200 text-amber-800 rounded-full">
+              {myPending.length}
+            </span>
+          </div>
+          <div className="space-y-2">
+            {myPending.map(p => (
+              <div key={p.id} className="bg-white border border-amber-100 rounded-lg px-4 py-2.5
+                                         flex items-center gap-3 text-sm">
+                <span className="font-semibold text-gray-900">₹{fmt(p.amount)}</span>
+                <span className="text-gray-500">{MONTHS[p.billing_month - 1]?.slice(0, 3)} {p.billing_year}</span>
+                <span className="ml-auto px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-700 rounded-full">
+                  Awaiting approval
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Resident: rejected payments */}
+      {myRejected.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <AlertIcon className="w-5 h-5 text-red-600" />
+            <h3 className="text-sm font-bold text-red-800">Rejected Payments</h3>
+            <span className="ml-auto px-2 py-0.5 text-xs font-bold bg-red-200 text-red-800 rounded-full">
+              {myRejected.length}
+            </span>
+          </div>
+          <div className="space-y-2">
+            {myRejected.map(p => (
+              <div key={p.id} className="bg-white border border-red-100 rounded-lg px-4 py-3">
+                <div className="flex items-center gap-3 text-sm">
+                  <span className="font-semibold text-gray-900">₹{fmt(p.amount)}</span>
+                  <span className="text-gray-500">{MONTHS[p.billing_month - 1]?.slice(0, 3)} {p.billing_year}</span>
+                  <span className="ml-auto px-2 py-0.5 text-xs font-medium bg-red-100 text-red-700 rounded-full">
+                    Rejected
+                  </span>
+                </div>
+                {p.reject_reason && (
+                  <p className="text-xs text-red-600 mt-1.5">Reason: {p.reject_reason}</p>
+                )}
+              </div>
+            ))}
+          </div>
+          <button onClick={() => navigate('/payments')}
+            className="mt-3 w-full py-2 text-sm font-semibold text-red-700 bg-red-100
+                       hover:bg-red-200 rounded-lg transition text-center">
+            View in Payments →
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ClockIcon({ className }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
   )
 }
 

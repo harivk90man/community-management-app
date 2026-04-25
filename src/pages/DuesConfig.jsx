@@ -62,10 +62,14 @@ function BoardView({ user }) {
     setSavingAssoc(true)
     setAssocMsg({ type: '', text: '' })
     try {
+      const trimmedUpi = assocForm.upi_id.trim()
+      if (trimmedUpi && !/^[\w.\-]+@[\w.\-]+$/.test(trimmedUpi)) {
+        throw new Error('UPI ID must be in the format name@bank (e.g. yourname@okhdfcbank)')
+      }
       const payload = {
         opening_balance: Number(assocForm.opening_balance) || 0,
         due_day: Math.min(28, Math.max(1, Number(assocForm.due_day) || 10)),
-        upi_id: assocForm.upi_id.trim() || null,
+        upi_id: trimmedUpi || null,
         updated_at: new Date().toISOString(),
       }
       if (assocConfig.id) {
@@ -158,7 +162,7 @@ function BoardView({ user }) {
                     onChange={e => setAssocForm(p => ({ ...p, opening_balance: e.target.value }))}
                     placeholder="e.g. 50000" className={inputCls + ' pl-7'} />
                 </div>
-                <p className="text-xs text-gray-400 mt-1">Total funds the association has as of April 2026</p>
+                <p className="text-xs text-gray-400 mt-1">Total funds the association currently has</p>
               </Field>
               <Field label="Due Day (of every month)" required>
                 <input type="number" min="1" max="28" value={assocForm.due_day}
@@ -174,7 +178,7 @@ function BoardView({ user }) {
               <p className="text-xs text-gray-400 mt-1">Residents will pay to this UPI ID via the Pay Now button</p>
             </Field>
             <div className="flex justify-end gap-3">
-              <button type="button" onClick={() => { setEditingAssoc(false); setAssocForm({ opening_balance: String(assocConfig.opening_balance ?? 0), due_day: String(assocConfig.due_day ?? 10) }) }}
+              <button type="button" onClick={() => { setEditingAssoc(false); setAssocForm({ opening_balance: String(assocConfig.opening_balance ?? 0), due_day: String(assocConfig.due_day ?? 10), upi_id: assocConfig.upi_id ?? '' }) }}
                 className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-200
                            hover:border-gray-300 rounded-lg transition">Cancel</button>
               <button onClick={handleAssocSave} disabled={savingAssoc}

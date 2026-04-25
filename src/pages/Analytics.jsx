@@ -45,7 +45,7 @@ export default function Analytics() {
 
   const { loading, error: fetchError, retry } = usePageData(async () => {
     const [pRes, eRes, vRes, dRes] = await Promise.all([
-      supabase.from('payments').select('villa_id, amount, mode, billing_month, billing_year'),
+      supabase.from('payments').select('villa_id, amount, mode, billing_month, billing_year').eq('status', 'approved'),
       supabase.from('expenses').select('amount, category, expense_date'),
       supabase.from('villas').select('id, villa_number, owner_name, phone, is_active').order('villa_number'),
       supabase.from('dues_config').select('monthly_amount').order('effective_from', { ascending: false }).limit(1),

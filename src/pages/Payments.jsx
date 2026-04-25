@@ -22,21 +22,23 @@ const MODE_STYLE = {
   'Cheque':        'bg-purple-100 text-purple-700',
 }
 
-const now       = new Date()
-const CUR_MONTH = now.getMonth() + 1
-const CUR_YEAR  = now.getFullYear()
+function getNow()      { return new Date() }
+function getCurMonth() { return getNow().getMonth() + 1 }
+function getCurYear()  { return getNow().getFullYear() }
+function getToday()    { return getNow().toISOString().slice(0, 10) }
+function getYearOptions() { const y = getCurYear(); return Array.from({ length: 5 }, (_, i) => y - i) }
 
-const YEAR_OPTIONS = Array.from({ length: 5 }, (_, i) => CUR_YEAR - i)
-
-const EMPTY_FORM = {
-  villa_id:      '',
-  amount:        '',
-  mode:          'UPI',
-  billing_month: CUR_MONTH,
-  billing_year:  CUR_YEAR,
-  paid_on:       new Date().toISOString().slice(0, 10),
-  remarks:       '',
-  recorded_by:   '',
+function makeEmptyForm(email) {
+  return {
+    villa_id:      '',
+    amount:        '',
+    mode:          'UPI',
+    billing_month: getCurMonth(),
+    billing_year:  getCurYear(),
+    paid_on:       getToday(),
+    remarks:       '',
+    recorded_by:   email ?? '',
+  }
 }
 
 const UPI_APPS = [
@@ -71,7 +73,7 @@ function exportCSV(rows) {
   const blob = new Blob([lines.join('\n')], { type: 'text/csv' })
   const url  = URL.createObjectURL(blob)
   const a    = Object.assign(document.createElement('a'), {
-    href: url, download: `payments_${CUR_YEAR}_${CUR_MONTH}.csv`,
+    href: url, download: `payments_${getCurYear()}_${getCurMonth()}.csv`,
   })
   a.click()
   URL.revokeObjectURL(url)
@@ -114,10 +116,14 @@ function BoardView({ user, myVilla, villaUser }) {
   const [upiModalData,    setUpiModalData]    = useState(null)
   const [showRecordModal, setShowRecordModal] = useState(false)
   const [approvingId,     setApprovingId]     = useState(null)
+  const [rejectingId,     setRejectingId]     = useState(null)
+  const [undoingId,       setUndoingId]       = useState(null)
+  const [confirmApprove,  setConfirmApprove]  = useState(null)
+  const [actionError,     setActionError]     = useState('')
 
   const [filterVilla, setFilterVilla] = useState('')
-  const [filterMonth, setFilterMonth] = useState(CUR_MONTH)
-  const [filterYear,  setFilterYear]  = useState(CUR_YEAR)
+  const [filterMonth, setFilterMonth] = useState(getCurMonth)
+  const [filterYear,  setFilterYear]  = useState(getCurYear)
   const [summary, setSummary] = useState({ collected: 0, paidCount: 0, totalVillas: 0 })
 
   const { loading, error: fetchError, retry } = usePageData(async () => {
@@ -164,29 +170,81 @@ function BoardView({ user, myVilla, villaUser }) {
   }
 
   async function handleDelete(p) {
-    setDeletingId(p.id)
+    setDeletingId(p.id); setActionError('')
     try {
       const { error } = await supabase.from('payments').delete().eq('id', p.id)
       if (error) throw error
       setPayments(prev => prev.filter(x => x.id !== p.id))
-    } catch { /* stays */ }
-    setDeletingId(null); setConfirmDelete(null)
+      setConfirmDelete(null)
+    } catch (e) {
+      setActionError(`Failed to delete: ${e.message ?? 'Unknown error'}`)
+    }
+    setDeletingId(null)
+  }
+
+  async function logAudit(paymentId, action, reason, details) {
+    await supabase.from('payment_audit').insert({
+      payment_id: paymentId,
+      action,
+      performed_by: user?.email ?? 'unknown',
+      reason: reason || null,
+      details: details || null,
+    })
   }
 
   async function handleApprove(payment) {
-    setApprovingId(payment.id)
+    setApprovingId(payment.id); setActionError('')
     try {
       const { data, error } = await supabase
         .from('payments')
-        .update({ status: 'approved', approved_by: user?.email ?? null })
+        .update({ status: 'approved', approved_by: user?.email ?? null, status_changed_at: new Date().toISOString() })
         .eq('id', payment.id)
         .select('*, villas(villa_number, owner_name)')
         .single()
       if (error) throw error
       setPendingPayments(prev => prev.filter(p => p.id !== payment.id))
       setPayments(prev => [data, ...prev])
-    } catch { /* silently fail */ }
+      setConfirmApprove(null)
+      logAudit(payment.id, 'approved', null, { amount: payment.amount, billing_month: payment.billing_month, billing_year: payment.billing_year })
+    } catch (e) {
+      setActionError(`Failed to approve: ${e.message ?? 'Unknown error'}`)
+    }
     setApprovingId(null)
+  }
+
+  async function handleReject(payment, reason) {
+    setRejectingId(payment.id); setActionError('')
+    try {
+      const { error } = await supabase
+        .from('payments')
+        .update({ status: 'rejected', rejected_by: user?.email ?? null, reject_reason: reason, status_changed_at: new Date().toISOString() })
+        .eq('id', payment.id)
+      if (error) throw error
+      setPendingPayments(prev => prev.filter(p => p.id !== payment.id))
+      logAudit(payment.id, 'rejected', reason, { amount: payment.amount, billing_month: payment.billing_month, billing_year: payment.billing_year })
+    } catch (e) {
+      setActionError(`Failed to reject: ${e.message ?? 'Unknown error'}`)
+    }
+    setRejectingId(null)
+  }
+
+  async function handleUndoApprove(payment) {
+    setUndoingId(payment.id); setActionError('')
+    try {
+      const { data, error } = await supabase
+        .from('payments')
+        .update({ status: 'pending', approved_by: null, status_changed_at: new Date().toISOString() })
+        .eq('id', payment.id)
+        .select('*, villas(villa_number, owner_name)')
+        .single()
+      if (error) throw error
+      setPayments(prev => prev.filter(p => p.id !== payment.id))
+      setPendingPayments(prev => [data, ...prev])
+      logAudit(payment.id, 'undo_approve', null, { amount: payment.amount, billing_month: payment.billing_month, billing_year: payment.billing_year })
+    } catch (e) {
+      setActionError(`Failed to undo: ${e.message ?? 'Unknown error'}`)
+    }
+    setUndoingId(null)
   }
 
   function handlePaymentRecorded(newPayment) {
@@ -197,8 +255,9 @@ function BoardView({ user, myVilla, villaUser }) {
   const pending = summary.totalVillas - summary.paidCount
   const GO_LIVE_YEAR = 2026, GO_LIVE_MONTH = 5
   const isBeforeGoLive = filterYear < GO_LIVE_YEAR || (filterYear === GO_LIVE_YEAR && filterMonth < GO_LIVE_MONTH)
-  const isCurrentMonth = filterMonth === CUR_MONTH && filterYear === CUR_YEAR
-  const isPastDueDay   = isBeforeGoLive ? false : (isCurrentMonth ? now.getDate() > dueDay : true)
+  const curMonth = getCurMonth(), curYear = getCurYear()
+  const isCurrentMonth = filterMonth === curMonth && filterYear === curYear
+  const isPastDueDay   = isBeforeGoLive ? false : (isCurrentMonth ? getNow().getDate() > dueDay : true)
   const paidVillaIds   = new Set(payments.filter(p => p.billing_month === filterMonth && p.billing_year === filterYear).map(p => p.villa_id))
   const unpaidVillas   = isBeforeGoLive ? [] : villas.filter(v => !paidVillaIds.has(v.id))
 
@@ -232,13 +291,24 @@ function BoardView({ user, myVilla, villaUser }) {
 
       {fetchError && <FetchError message={fetchError} onRetry={retry} />}
 
+      {actionError && (
+        <div className="mb-4 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center justify-between">
+          <span>{actionError}</span>
+          <button onClick={() => setActionError('')} className="text-red-400 hover:text-red-600 ml-3 shrink-0">
+            <XIcon className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Pending Approvals */}
       {pendingPayments.length > 0 && (
         <PendingApprovals
           payments={pendingPayments}
           currentUserEmail={user?.email}
-          onApprove={handleApprove}
+          onApprove={p => setConfirmApprove(p)}
+          onReject={handleReject}
           approvingId={approvingId}
+          rejectingId={rejectingId}
         />
       )}
 
@@ -285,8 +355,9 @@ function BoardView({ user, myVilla, villaUser }) {
       )}
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-3 mb-4">
-        <select value={filterVilla} onChange={e => setFilterVilla(e.target.value)} className={selectCls}>
+      <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-3 mb-4">
+        <select value={filterVilla} onChange={e => setFilterVilla(e.target.value)}
+          className={selectCls + ' col-span-2'}>
           <option value="">All Villas</option>
           {villas.map(v => <option key={v.id} value={v.id}>{v.villa_number} – {v.owner_name}</option>)}
         </select>
@@ -294,11 +365,11 @@ function BoardView({ user, myVilla, villaUser }) {
           {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
         </select>
         <select value={filterYear} onChange={e => setFilterYear(Number(e.target.value))} className={selectCls}>
-          {YEAR_OPTIONS.map(y => <option key={y} value={y}>{y}</option>)}
+          {getYearOptions().map(y => <option key={y} value={y}>{y}</option>)}
         </select>
-        {(filterVilla || filterMonth !== CUR_MONTH || filterYear !== CUR_YEAR) && (
-          <button onClick={() => { setFilterVilla(''); setFilterMonth(CUR_MONTH); setFilterYear(CUR_YEAR) }}
-            className="px-3 py-2 text-sm text-green-700 hover:underline">Reset filters</button>
+        {(filterVilla || filterMonth !== curMonth || filterYear !== curYear) && (
+          <button onClick={() => { setFilterVilla(''); setFilterMonth(getCurMonth()); setFilterYear(getCurYear()) }}
+            className="px-3 py-2 text-sm text-green-700 hover:underline col-span-2 sm:col-span-1">Reset filters</button>
         )}
       </div>
 
@@ -321,7 +392,9 @@ function BoardView({ user, myVilla, villaUser }) {
                     <PaymentRow key={p.id} payment={p}
                       onEdit={() => { setEditing(p); setShowForm(true) }}
                       onDelete={() => setConfirmDelete(p)}
-                      deleting={deletingId === p.id} />
+                      deleting={deletingId === p.id}
+                      onUndo={() => handleUndoApprove(p)}
+                      undoing={undoingId === p.id} />
                   ))}
                 </tbody>
               </table>
@@ -338,6 +411,7 @@ function BoardView({ user, myVilla, villaUser }) {
           userName={villaUser?.name ?? user?.email ?? ''}
           upiId={upiId}
           defaultAmount={monthlyAmount}
+          existingPayments={[...payments, ...pendingPayments].filter(p => p.villa_id === myVilla.id)}
           onClose={() => setShowUpiModal(false)}
           onProceed={data => { setUpiModalData(data); setShowRecordModal(true) }}
         />
@@ -365,13 +439,33 @@ function BoardView({ user, myVilla, villaUser }) {
           onConfirm={() => handleDelete(confirmDelete)}
           onCancel={() => setConfirmDelete(null)} />
       )}
+      {confirmApprove && (
+        <ConfirmModal
+          message={`Approve ₹${fmt(confirmApprove.amount)} payment for Villa ${confirmApprove.villas?.villa_number} (${MONTHS[confirmApprove.billing_month - 1]} ${confirmApprove.billing_year})?`}
+          loading={approvingId === confirmApprove.id}
+          onConfirm={() => handleApprove(confirmApprove)}
+          onCancel={() => setConfirmApprove(null)}
+          confirmLabel="Approve"
+          confirmColor="green" />
+      )}
     </div>
   )
 }
 
 // ─── pending approvals ────────────────────────────────────────────────────────
 
-function PendingApprovals({ payments, currentUserEmail, onApprove, approvingId }) {
+function PendingApprovals({ payments, currentUserEmail, onApprove, onReject, approvingId, rejectingId }) {
+  const [rejectForm, setRejectForm] = useState(null) // payment id being rejected
+  const [rejectReason, setRejectReason] = useState('')
+
+  function startReject(p) { setRejectForm(p.id); setRejectReason('') }
+  function cancelReject() { setRejectForm(null); setRejectReason('') }
+  function submitReject(p) {
+    if (!rejectReason.trim()) return
+    onReject(p, rejectReason.trim())
+    cancelReject()
+  }
+
   return (
     <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
       <div className="flex items-center gap-2 mb-3">
@@ -381,35 +475,68 @@ function PendingApprovals({ payments, currentUserEmail, onApprove, approvingId }
           {payments.length}
         </span>
       </div>
-      <div className="space-y-2">
+      <div className="space-y-2 max-h-80 overflow-y-auto">
         {payments.map(p => {
-          const isOwn      = p.initiated_by === currentUserEmail
+          const isOwn       = p.initiated_by === currentUserEmail
           const isApproving = approvingId === p.id
+          const isRejecting = rejectingId === p.id
+          const showRejectForm = rejectForm === p.id
           return (
-            <div key={p.id}
-              className="bg-white border border-amber-100 rounded-lg px-4 py-3 flex flex-wrap items-center gap-3">
-              <span className="w-8 h-8 rounded-full bg-green-600 flex items-center justify-center
-                               text-white font-black text-xs shrink-0">
-                {p.villas?.villa_number ?? '?'}
-              </span>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 truncate">{p.villas?.owner_name ?? '—'}</p>
-                <p className="text-xs text-gray-500">
-                  ₹{fmt(p.amount)} · {MONTHS[p.billing_month - 1]?.slice(0, 3)} {p.billing_year} · {p.mode}
-                  {p.initiated_by && ` · by ${p.initiated_by}`}
-                </p>
-              </div>
-              {isOwn ? (
-                <span className="px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-100 rounded-lg whitespace-nowrap">
-                  Awaiting another admin
+            <div key={p.id} className="bg-white border border-amber-100 rounded-lg px-4 py-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="w-8 h-8 rounded-full bg-green-600 flex items-center justify-center
+                                 text-white font-black text-xs shrink-0">
+                  {p.villas?.villa_number ?? '?'}
                 </span>
-              ) : (
-                <button onClick={() => onApprove(p)} disabled={isApproving}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white
-                             bg-green-600 hover:bg-green-700 disabled:bg-green-400 rounded-lg transition whitespace-nowrap">
-                  {isApproving && <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-                  {isApproving ? 'Approving…' : 'Approve'}
-                </button>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">{p.villas?.owner_name ?? '—'}</p>
+                  <p className="text-xs text-gray-500">
+                    ₹{fmt(p.amount)} · {MONTHS[p.billing_month - 1]?.slice(0, 3)} {p.billing_year} · {p.mode}
+                    {p.initiated_by && ` · by ${p.initiated_by}`}
+                  </p>
+                </div>
+                {isOwn ? (
+                  <span className="px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-100 rounded-lg whitespace-nowrap">
+                    Awaiting another admin
+                  </span>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => onApprove(p)} disabled={isApproving || isRejecting}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white
+                                 bg-green-600 hover:bg-green-700 disabled:bg-green-400 rounded-lg transition whitespace-nowrap">
+                      {isApproving && <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                      {isApproving ? 'Approving…' : 'Approve'}
+                    </button>
+                    {!showRejectForm && (
+                      <button onClick={() => startReject(p)} disabled={isApproving || isRejecting}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-600
+                                   border border-red-200 hover:bg-red-50 disabled:opacity-40 rounded-lg transition whitespace-nowrap">
+                        Reject
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+              {/* Inline reject reason form */}
+              {showRejectForm && (
+                <div className="mt-3 pt-3 border-t border-amber-100 space-y-2">
+                  <p className="text-xs font-medium text-red-700">Reason for rejection:</p>
+                  <input type="text" value={rejectReason} onChange={e => setRejectReason(e.target.value)}
+                    placeholder="e.g. Wrong amount, duplicate, not received…"
+                    className="w-full px-3 py-2 text-sm border border-red-200 rounded-lg
+                               focus:outline-none focus:ring-2 focus:ring-red-400 focus:border-transparent" autoFocus />
+                  <div className="flex gap-2">
+                    <button onClick={cancelReject}
+                      className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200
+                                 hover:border-gray-300 rounded-lg transition">Cancel</button>
+                    <button onClick={() => submitReject(p)} disabled={!rejectReason.trim() || isRejecting}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white
+                                 bg-red-600 hover:bg-red-700 disabled:bg-red-300 rounded-lg transition">
+                      {isRejecting && <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                      {isRejecting ? 'Rejecting…' : 'Confirm Reject'}
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           )
@@ -422,28 +549,32 @@ function PendingApprovals({ payments, currentUserEmail, onApprove, approvingId }
 // ─── resident view ────────────────────────────────────────────────────────────
 
 function ResidentView({ myVilla, villaUser, user }) {
-  const [payments,        setPayments]        = useState([])
-  const [pendingPayments, setPendingPayments] = useState([])
-  const [page,            setPage]            = useState(1)
-  const [upiId,           setUpiId]           = useState('')
-  const [monthlyAmount,   setMonthlyAmount]   = useState(0)
-  const [showUpiModal,    setShowUpiModal]    = useState(false)
-  const [upiModalData,    setUpiModalData]    = useState(null)
-  const [showRecordModal, setShowRecordModal] = useState(false)
+  const [payments,          setPayments]          = useState([])
+  const [pendingPayments,   setPendingPayments]   = useState([])
+  const [rejectedPayments,  setRejectedPayments]  = useState([])
+  const [page,              setPage]              = useState(1)
+  const [upiId,             setUpiId]             = useState('')
+  const [monthlyAmount,     setMonthlyAmount]     = useState(0)
+  const [showUpiModal,      setShowUpiModal]      = useState(false)
+  const [upiModalData,      setUpiModalData]      = useState(null)
+  const [showRecordModal,   setShowRecordModal]   = useState(false)
 
   const { loading, error: fetchError, retry } = usePageData(async () => {
     if (!myVilla?.id) return
-    const [approvedRes, pendingRes, assocRes, duesRes] = await Promise.all([
+    const [approvedRes, pendingRes, rejectedRes, assocRes, duesRes] = await Promise.all([
       supabase.from('payments').select('*, villas(villa_number, owner_name)')
         .eq('villa_id', myVilla.id).eq('status', 'approved').order('paid_on', { ascending: false }),
       supabase.from('payments').select('*, villas(villa_number, owner_name)')
         .eq('villa_id', myVilla.id).eq('status', 'pending').order('paid_on', { ascending: false }),
+      supabase.from('payments').select('*, villas(villa_number, owner_name)')
+        .eq('villa_id', myVilla.id).eq('status', 'rejected').order('paid_on', { ascending: false }),
       supabase.from('association_config').select('upi_id').limit(1).single(),
       supabase.from('dues_config').select('monthly_amount').order('effective_from', { ascending: false }).limit(1),
     ])
     if (approvedRes.error) throw approvedRes.error
     setPayments(approvedRes.data ?? [])
     setPendingPayments(pendingRes.data ?? [])
+    setRejectedPayments(rejectedRes.data ?? [])
     if (assocRes.data?.upi_id) setUpiId(assocRes.data.upi_id)
     if (duesRes.data?.[0]) setMonthlyAmount(Number(duesRes.data[0].monthly_amount) || 0)
   }, [myVilla?.id])
@@ -455,6 +586,18 @@ function ResidentView({ myVilla, villaUser, user }) {
   function handlePaymentRecorded(newPayment) {
     setPendingPayments(prev => [newPayment, ...prev])
     setShowRecordModal(false); setUpiModalData(null); setShowUpiModal(false)
+  }
+
+  function handleResubmit(rejected) {
+    // Pre-fill the UPI modal with the rejected payment's data, then dismiss the rejected card
+    setRejectedPayments(prev => prev.filter(p => p.id !== rejected.id))
+    setShowUpiModal(true)
+  }
+
+  async function handleDismissRejected(id) {
+    // Soft-dismiss: delete the rejected record so it stops showing
+    await supabase.from('payments').delete().eq('id', id)
+    setRejectedPayments(prev => prev.filter(p => p.id !== id))
   }
 
   if (!myVilla) {
@@ -470,13 +613,13 @@ function ResidentView({ myVilla, villaUser, user }) {
 
   return (
     <div className="p-6 max-w-4xl">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
           <h1 className="text-xl font-bold text-gray-900">My Payments</h1>
           <p className="text-sm text-gray-500 mt-0.5">Villa {villaNumber}</p>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="text-right">
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="text-right sm:text-right">
             <p className="text-xs text-gray-400">Total paid (all time)</p>
             <p className="text-xl font-bold text-green-700">₹{fmt(totalPaid)}</p>
           </div>
@@ -489,6 +632,50 @@ function ResidentView({ myVilla, villaUser, user }) {
       </div>
 
       {fetchError && <FetchError message={fetchError} onRetry={retry} />}
+
+      {/* Rejected payments banner */}
+      {rejectedPayments.length > 0 && (
+        <div className="mb-4 bg-red-50 border border-red-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertIcon className="w-4 h-4 text-red-600" />
+            <p className="text-sm font-semibold text-red-800">Rejected</p>
+          </div>
+          <div className="space-y-2">
+            {rejectedPayments.map(p => (
+              <div key={p.id} className="bg-white border border-red-100 rounded-lg px-4 py-3">
+                <div className="flex flex-wrap items-center gap-3 text-sm">
+                  <span className="font-semibold text-gray-900">₹{fmt(p.amount)}</span>
+                  <span className="text-gray-500">{MONTHS[p.billing_month - 1]?.slice(0, 3)} {p.billing_year}</span>
+                  <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${MODE_STYLE[p.mode] ?? 'bg-gray-100 text-gray-600'}`}>
+                    {p.mode}
+                  </span>
+                  <span className="px-2 py-0.5 text-xs font-medium bg-red-100 text-red-700 rounded-full">
+                    Rejected
+                  </span>
+                </div>
+                {p.reject_reason && (
+                  <p className="text-xs text-red-600 mt-2 bg-red-50 px-3 py-1.5 rounded-lg">
+                    Reason: {p.reject_reason}
+                    {p.rejected_by && <span className="text-red-400"> — by {p.rejected_by}</span>}
+                  </p>
+                )}
+                <div className="flex gap-2 mt-2">
+                  <button onClick={() => handleResubmit(p)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white
+                               bg-green-600 hover:bg-green-700 rounded-lg transition">
+                    <PayIcon className="w-3 h-3" /> Re-submit Payment
+                  </button>
+                  <button onClick={() => handleDismissRejected(p.id)}
+                    className="px-3 py-1.5 text-xs font-medium text-gray-500
+                               border border-gray-200 hover:border-gray-300 rounded-lg transition">
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Pending payments banner */}
       {pendingPayments.length > 0 && (
@@ -515,11 +702,11 @@ function ResidentView({ myVilla, villaUser, user }) {
         </div>
       )}
 
-      {loading ? <TableSkeleton cols={5} /> : pageRows.length === 0 && pendingPayments.length === 0 ? (
+      {loading ? <TableSkeleton cols={5} /> : pageRows.length === 0 && pendingPayments.length === 0 && rejectedPayments.length === 0 ? (
         <div className="bg-white rounded-xl border border-gray-100 py-16 text-center">
           <p className="text-gray-500">No payment records found.</p>
         </div>
-      ) : (
+      ) : pageRows.length > 0 && (
         <>
           <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
             <div className="overflow-x-auto">
@@ -557,6 +744,7 @@ function ResidentView({ myVilla, villaUser, user }) {
         <UpiPayModal
           villaNumber={villaNumber} userName={userName}
           upiId={upiId} defaultAmount={monthlyAmount}
+          existingPayments={[...payments, ...pendingPayments]}
           onClose={() => setShowUpiModal(false)}
           onProceed={data => { setUpiModalData(data); setShowRecordModal(true) }}
         />
@@ -576,12 +764,16 @@ function ResidentView({ myVilla, villaUser, user }) {
 
 // ─── UPI pay modal (modal 1) ──────────────────────────────────────────────────
 
-function UpiPayModal({ villaNumber, userName, upiId, defaultAmount, onClose, onProceed }) {
+function UpiPayModal({ villaNumber, userName, upiId, defaultAmount, existingPayments = [], onClose, onProceed }) {
   const [amount,       setAmount]       = useState(defaultAmount > 0 ? String(defaultAmount) : '')
-  const [billingMonth, setBillingMonth] = useState(CUR_MONTH)
-  const [billingYear,  setBillingYear]  = useState(CUR_YEAR)
+  const [billingMonth, setBillingMonth] = useState(getCurMonth)
+  const [billingYear,  setBillingYear]  = useState(getCurYear)
   const [note,         setNote]         = useState('')
   const [clickedApp,   setClickedApp]   = useState(null)
+
+  const duplicate = existingPayments.find(
+    p => p.billing_month === billingMonth && p.billing_year === billingYear
+  )
 
   useEffect(() => {
     setNote(`Villa ${villaNumber} · ${MONTHS[billingMonth - 1]} ${billingYear} · ${userName}`.slice(0, 50))
@@ -589,7 +781,15 @@ function UpiPayModal({ villaNumber, userName, upiId, defaultAmount, onClose, onP
 
   function handleAppClick(appId) {
     if (!upiId || !amount || Number(amount) <= 0) return
-    window.open(buildUpiUrl(appId, upiId, Number(amount), note), '_blank')
+    const url = buildUpiUrl(appId, upiId, Number(amount), note)
+    // Use location.href for native UPI deep links (more reliable on mobile, avoids popup blockers)
+    // Fall back to window.open for web-only schemes
+    const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent)
+    if (isMobile) {
+      window.location.href = url
+    } else {
+      window.open(url, '_blank')
+    }
     setClickedApp(appId)
   }
 
@@ -597,9 +797,9 @@ function UpiPayModal({ villaNumber, userName, upiId, defaultAmount, onClose, onP
   const amountOk = amount && Number(amount) > 0
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[92vh] overflow-y-auto">
+      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
 
         <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
           <h2 className="text-lg font-semibold text-gray-900">Pay Maintenance Dues</h2>
@@ -630,10 +830,21 @@ function UpiPayModal({ villaNumber, userName, upiId, defaultAmount, onClose, onP
                 {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
               </select>
               <select value={billingYear} onChange={e => setBillingYear(Number(e.target.value))} className={inputCls}>
-                {YEAR_OPTIONS.map(y => <option key={y} value={y}>{y}</option>)}
+                {getYearOptions().map(y => <option key={y} value={y}>{y}</option>)}
               </select>
             </div>
           </div>
+
+          {/* Duplicate warning */}
+          {duplicate && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+              <p className="text-sm text-amber-700 font-medium">
+                You already have a {duplicate.status === 'pending' ? 'pending' : 'recorded'} payment
+                of ₹{fmt(duplicate.amount)} for {MONTHS[billingMonth - 1]} {billingYear}.
+              </p>
+              <p className="text-xs text-amber-600 mt-1">You can still proceed if this is an additional payment.</p>
+            </div>
+          )}
 
           {/* Amount */}
           <div>
@@ -723,15 +934,23 @@ function RecordPaymentModal({ villaId, villaNumber, userName, userEmail, upiId, 
           mode:          'UPI',
           billing_month: billingMonth,
           billing_year:  billingYear,
-          paid_on:       new Date().toISOString().slice(0, 10),
+          paid_on:       getToday(),
           remarks:       `${appName} · ${note}`,
           recorded_by:   userName || userEmail,
           status:        'pending',
           initiated_by:  userEmail,
+          status_changed_at: new Date().toISOString(),
         })
         .select('*, villas(villa_number, owner_name)')
         .single()
       if (err) throw err
+      // Log the submission to audit trail
+      await supabase.from('payment_audit').insert({
+        payment_id: data.id,
+        action: 'submitted',
+        performed_by: userEmail,
+        details: { amount, billing_month: billingMonth, billing_year: billingYear, mode: 'UPI', app: appName },
+      })
       onRecorded(data)
     } catch (e) {
       setError(e.message ?? 'Something went wrong.')
@@ -741,7 +960,7 @@ function RecordPaymentModal({ villaId, villaNumber, userName, userEmail, upiId, 
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-4">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={saving ? undefined : onClose} />
       <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md">
 
@@ -809,7 +1028,11 @@ function ReviewRow({ label, value, mono, highlight }) {
 
 // ─── payment table row ────────────────────────────────────────────────────────
 
-function PaymentRow({ payment: p, onEdit, onDelete, deleting }) {
+function PaymentRow({ payment: p, onEdit, onDelete, deleting, onUndo, undoing }) {
+  // Show undo button for payments approved within the last 24 hours
+  const canUndo = p.status_changed_at &&
+    (getNow().getTime() - new Date(p.status_changed_at).getTime()) < 24 * 60 * 60 * 1000
+
   return (
     <tr className="hover:bg-gray-50 transition-colors">
       <td className="px-4 py-3">
@@ -832,6 +1055,13 @@ function PaymentRow({ payment: p, onEdit, onDelete, deleting }) {
       <td className="px-4 py-3 text-gray-500 text-xs">{p.recorded_by || '—'}</td>
       <td className="px-4 py-3">
         <div className="flex items-center justify-end gap-2">
+          {canUndo && (
+            <button onClick={onUndo} disabled={undoing}
+              className="px-3 py-1.5 text-xs font-medium text-amber-600 border border-amber-200
+                         hover:border-amber-300 hover:bg-amber-50 rounded-lg transition disabled:opacity-50">
+              {undoing ? '…' : 'Undo'}
+            </button>
+          )}
           <button onClick={onEdit}
             className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-900
                        border border-gray-200 hover:border-gray-300 rounded-lg transition">Edit</button>
@@ -855,7 +1085,7 @@ function PaymentFormModal({ editing, villas, user, onSaved, onClose }) {
       ? { villa_id: editing.villa_id, amount: String(editing.amount), mode: editing.mode,
           billing_month: editing.billing_month, billing_year: editing.billing_year,
           paid_on: editing.paid_on, remarks: editing.remarks ?? '', recorded_by: editing.recorded_by ?? '' }
-      : { ...EMPTY_FORM, recorded_by: user?.email ?? '' }
+      : makeEmptyForm(user?.email)
   )
   const [saving, setSaving] = useState(false)
   const [error,  setError]  = useState('')
@@ -930,7 +1160,7 @@ function PaymentFormModal({ editing, villas, user, onSaved, onClose }) {
             </Field>
             <Field label="Year" required>
               <select value={form.billing_year} onChange={e => set('billing_year', Number(e.target.value))} className={inputCls}>
-                {YEAR_OPTIONS.map(y => <option key={y}>{y}</option>)}
+                {getYearOptions().map(y => <option key={y}>{y}</option>)}
               </select>
             </Field>
             <Field label="Paid On" required>
@@ -1010,7 +1240,12 @@ function PagBtn({ disabled, onClick, children }) {
   )
 }
 
-function ConfirmModal({ message, loading, onConfirm, onCancel }) {
+function ConfirmModal({ message, loading, onConfirm, onCancel, confirmLabel = 'Delete', confirmColor = 'red' }) {
+  const colorMap = {
+    red:   { bg: 'bg-red-600 hover:bg-red-700 disabled:bg-red-400', loadLabel: 'Deleting…' },
+    green: { bg: 'bg-green-600 hover:bg-green-700 disabled:bg-green-400', loadLabel: 'Approving…' },
+  }
+  const c = colorMap[confirmColor] ?? colorMap.red
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={loading ? undefined : onCancel} />
@@ -1021,10 +1256,10 @@ function ConfirmModal({ message, loading, onConfirm, onCancel }) {
             className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-200
                        hover:border-gray-300 rounded-lg transition disabled:opacity-50">Cancel</button>
           <button onClick={onConfirm} disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700
-                       disabled:bg-red-400 text-white text-sm font-semibold rounded-lg transition">
+            className={`flex items-center gap-2 px-4 py-2 ${c.bg}
+                       text-white text-sm font-semibold rounded-lg transition`}>
             {loading && <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-            {loading ? 'Deleting…' : 'Delete'}
+            {loading ? c.loadLabel : confirmLabel}
           </button>
         </div>
       </div>
