@@ -71,10 +71,30 @@ CREATE INDEX IF NOT EXISTS idx_payment_audit_payment_id
 CREATE INDEX IF NOT EXISTS idx_payments_status
   ON payments (status);
 
--- Step 5: Add upi_id column to association_config (if missing)
+-- Step 5: Add upi_id and bank details columns to association_config (if missing)
 
 DO $$ BEGIN
   ALTER TABLE association_config ADD COLUMN upi_id text;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE association_config ADD COLUMN bank_account_name text;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE association_config ADD COLUMN bank_account_number text;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE association_config ADD COLUMN bank_ifsc text;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE association_config ADD COLUMN bank_name text;
 EXCEPTION WHEN duplicate_column THEN NULL;
 END $$;
 

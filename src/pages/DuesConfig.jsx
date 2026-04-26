@@ -35,11 +35,11 @@ function BoardView({ user }) {
   })
 
   // Association config state
-  const [assocConfig, setAssocConfig] = useState({ opening_balance: 0, due_day: 10, upi_id: '' })
+  const [assocConfig, setAssocConfig] = useState({ opening_balance: 0, due_day: 10, upi_id: '', bank_account_name: '', bank_account_number: '', bank_ifsc: '', bank_name: '' })
   const [savingAssoc, setSavingAssoc] = useState(false)
   const [assocMsg, setAssocMsg]       = useState({ type: '', text: '' })
   const [editingAssoc, setEditingAssoc] = useState(false)
-  const [assocForm, setAssocForm]     = useState({ opening_balance: '', due_day: '10', upi_id: '' })
+  const [assocForm, setAssocForm]     = useState({ opening_balance: '', due_day: '10', upi_id: '', bank_account_name: '', bank_account_number: '', bank_ifsc: '', bank_name: '' })
 
   const { loading, error: fetchError, retry: fetchRetry } = usePageData(async () => {
     const [duesRes, assocRes] = await Promise.all([
@@ -54,6 +54,10 @@ function BoardView({ user }) {
         opening_balance: String(assocRes.data.opening_balance ?? 0),
         due_day: String(assocRes.data.due_day ?? 10),
         upi_id: assocRes.data.upi_id ?? '',
+        bank_account_name: assocRes.data.bank_account_name ?? '',
+        bank_account_number: assocRes.data.bank_account_number ?? '',
+        bank_ifsc: assocRes.data.bank_ifsc ?? '',
+        bank_name: assocRes.data.bank_name ?? '',
       })
     }
   }, [])
@@ -70,6 +74,10 @@ function BoardView({ user }) {
         opening_balance: Number(assocForm.opening_balance) || 0,
         due_day: Math.min(28, Math.max(1, Number(assocForm.due_day) || 10)),
         upi_id: trimmedUpi || null,
+        bank_account_name: assocForm.bank_account_name.trim() || null,
+        bank_account_number: assocForm.bank_account_number.trim() || null,
+        bank_ifsc: assocForm.bank_ifsc.trim().toUpperCase() || null,
+        bank_name: assocForm.bank_name.trim() || null,
         updated_at: new Date().toISOString(),
       }
       if (assocConfig.id) {
@@ -177,8 +185,34 @@ function BoardView({ user }) {
                 placeholder="e.g. yourname@okhdfcbank" className={inputCls} />
               <p className="text-xs text-gray-400 mt-1">Residents will pay to this UPI ID via the Pay Now button</p>
             </Field>
+            <div className="border-t border-gray-100 pt-4">
+              <p className="text-sm font-semibold text-gray-700 mb-3">Bank Account Details (for IMPS/NEFT)</p>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Account Holder Name">
+                  <input type="text" value={assocForm.bank_account_name}
+                    onChange={e => setAssocForm(p => ({ ...p, bank_account_name: e.target.value }))}
+                    placeholder="e.g. Ashirvadh Castle Rock" className={inputCls} />
+                </Field>
+                <Field label="Bank Name">
+                  <input type="text" value={assocForm.bank_name}
+                    onChange={e => setAssocForm(p => ({ ...p, bank_name: e.target.value }))}
+                    placeholder="e.g. HDFC Bank" className={inputCls} />
+                </Field>
+                <Field label="Account Number">
+                  <input type="text" value={assocForm.bank_account_number}
+                    onChange={e => setAssocForm(p => ({ ...p, bank_account_number: e.target.value }))}
+                    placeholder="e.g. 50100123456789" className={inputCls} />
+                </Field>
+                <Field label="IFSC Code">
+                  <input type="text" value={assocForm.bank_ifsc}
+                    onChange={e => setAssocForm(p => ({ ...p, bank_ifsc: e.target.value.toUpperCase() }))}
+                    placeholder="e.g. HDFC0001234" className={inputCls} maxLength={11} />
+                </Field>
+              </div>
+              <p className="text-xs text-gray-400 mt-2">Residents can use these details for IMPS/NEFT bank transfer as an alternative to UPI</p>
+            </div>
             <div className="flex justify-end gap-3">
-              <button type="button" onClick={() => { setEditingAssoc(false); setAssocForm({ opening_balance: String(assocConfig.opening_balance ?? 0), due_day: String(assocConfig.due_day ?? 10), upi_id: assocConfig.upi_id ?? '' }) }}
+              <button type="button" onClick={() => { setEditingAssoc(false); setAssocForm({ opening_balance: String(assocConfig.opening_balance ?? 0), due_day: String(assocConfig.due_day ?? 10), upi_id: assocConfig.upi_id ?? '', bank_account_name: assocConfig.bank_account_name ?? '', bank_account_number: assocConfig.bank_account_number ?? '', bank_ifsc: assocConfig.bank_ifsc ?? '', bank_name: assocConfig.bank_name ?? '' }) }}
                 className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-200
                            hover:border-gray-300 rounded-lg transition">Cancel</button>
               <button onClick={handleAssocSave} disabled={savingAssoc}
@@ -209,6 +243,17 @@ function BoardView({ user }) {
                 <p className="text-sm text-green-400 mt-1 italic">Not set — residents cannot use Pay Now</p>
               )}
             </div>
+            {assocConfig.bank_account_number && (
+              <div className="p-4 bg-blue-50 rounded-lg">
+                <p className="text-xs text-blue-600 font-medium mb-2">Bank Account (IMPS/NEFT)</p>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div><span className="text-gray-400 text-xs">Name:</span><br/><span className="font-medium text-gray-800">{assocConfig.bank_account_name ?? '—'}</span></div>
+                  <div><span className="text-gray-400 text-xs">Bank:</span><br/><span className="font-medium text-gray-800">{assocConfig.bank_name ?? '—'}</span></div>
+                  <div><span className="text-gray-400 text-xs">A/C No:</span><br/><span className="font-bold text-blue-800 font-mono">{assocConfig.bank_account_number}</span></div>
+                  <div><span className="text-gray-400 text-xs">IFSC:</span><br/><span className="font-bold text-blue-800 font-mono">{assocConfig.bank_ifsc ?? '—'}</span></div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
