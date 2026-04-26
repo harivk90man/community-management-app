@@ -79,15 +79,14 @@ function exportCSV(rows) {
   URL.revokeObjectURL(url)
 }
 
-function buildUpiUrl(appId, upiId, amount, note) {
-  const p = `pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent('Ashirvadh Castle Rock')}&am=${amount}&tn=${encodeURIComponent(note)}&cu=INR`
-  const map = {
-    gpay:    `gpay://upi/pay?${p}`,
-    phonepe: `phonepe://pay?${p}`,
-    paytm:   `paytmmp://pay?${p}`,
-    bhim:    `upi://pay?${p}`,
-  }
-  return map[appId] ?? `upi://pay?${p}`
+function buildUpiUrl(appId, upiId, note) {
+  // Intentionally NOT including amount (am=) in the URL.
+  // Pre-filled amounts cause UPI apps to treat it as a merchant (P2M) payment
+  // which has much lower bank limits. Without amount, it goes through P2P flow
+  // with normal limits. The user enters the amount in the UPI app.
+  const p = `pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent('Ashirvadh Castle Rock')}&tn=${encodeURIComponent(note)}&cu=INR`
+  // Use generic upi:// intent for all apps — more reliable than app-specific schemes
+  return `upi://pay?${p}`
 }
 
 // ─── main page ────────────────────────────────────────────────────────────────
@@ -783,9 +782,8 @@ function UpiPayModal({ villaNumber, userName, upiId, defaultAmount, existingPaym
 
   function handleAppClick(appId) {
     if (!upiId || !amount || Number(amount) <= 0) return
-    const url = buildUpiUrl(appId, upiId, Number(amount), note)
+    const url = buildUpiUrl(appId, upiId, note)
     // Use location.href for native UPI deep links (more reliable on mobile, avoids popup blockers)
-    // Fall back to window.open for web-only schemes
     const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent)
     if (isMobile) {
       window.location.href = url
@@ -922,17 +920,14 @@ function UpiPayModal({ villaNumber, userName, upiId, defaultAmount, existingPaym
                 <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse shrink-0" />
                 <p className="text-sm text-blue-800 font-medium">
                   {clickedApp === 'manual' ? 'Complete the payment in your UPI app, then come back here'
-                    : `${appLabel} opened — complete the payment, then come back here`}
+                    : `UPI app opened — enter ₹${fmt(Number(amount))} and complete the payment`}
                 </p>
               </div>
-              {clickedApp !== 'manual' && (
-                <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-                  <p className="text-xs text-amber-700">
-                    Getting a bank limit error? Use the <strong>manual pay</strong> option below — open your UPI app
-                    directly and pay as a normal transfer (higher limits).
-                  </p>
-                </div>
-              )}
+              <div className="bg-white border border-blue-200 rounded-lg px-4 py-3 text-center">
+                <p className="text-xs text-gray-500">Amount to pay</p>
+                <p className="text-2xl font-black text-gray-900 mt-0.5">₹{fmt(Number(amount))}</p>
+                <p className="text-xs text-gray-400 mt-1">Enter this amount in your UPI app</p>
+              </div>
               <div className="flex gap-2">
                 <button onClick={() => setClickedApp(null)}
                   className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-600
