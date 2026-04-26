@@ -369,6 +369,13 @@ function VillaFormModal({ editing, onSaved, onClose }) {
     }
 
     try {
+      // Check for duplicate villa number
+      const { data: existing } = await supabase
+        .from('villas').select('id').eq('villa_number', payload.villa_number).maybeSingle()
+      if (existing && (!isEdit || existing.id !== editing?.id)) {
+        throw new Error(`Villa ${payload.villa_number} already exists.`)
+      }
+
       let villaData
       if (isEdit) {
         const { data, error: err } = await supabase
