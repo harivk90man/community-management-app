@@ -771,6 +771,7 @@ function UpiPayModal({ villaNumber, userName, upiId, defaultAmount, existingPaym
   const [billingYear,  setBillingYear]  = useState(getCurYear)
   const [note,         setNote]         = useState('')
   const [clickedApp,   setClickedApp]   = useState(null)
+  const [copied,       setCopied]       = useState(false)
 
   const duplicate = existingPayments.find(
     p => p.billing_month === billingMonth && p.billing_year === billingYear
@@ -870,8 +871,8 @@ function UpiPayModal({ villaNumber, userName, upiId, defaultAmount, existingPaym
 
           {/* App buttons or "I've paid" */}
           {!clickedApp ? (
-            <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Open payment app</p>
+            <div className="space-y-3">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Open payment app</p>
               <div className="grid grid-cols-2 gap-2">
                 {UPI_APPS.map(app => (
                   <button key={app.id} onClick={() => handleAppClick(app.id)}
@@ -887,23 +888,59 @@ function UpiPayModal({ villaNumber, userName, upiId, defaultAmount, existingPaym
               {!amountOk && (
                 <p className="text-xs text-red-500 mt-2 text-center">Enter an amount to continue</p>
               )}
+
+              {/* Manual pay fallback */}
+              {upiId && amountOk && (
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-2">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    Or pay manually (avoids bank limits)
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    Open your UPI app directly, send ₹{fmt(Number(amount))} to:
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 text-sm font-bold text-gray-800 bg-white border border-gray-200
+                                     px-3 py-2 rounded-lg font-mono break-all">{upiId}</code>
+                    <button onClick={() => { navigator.clipboard.writeText(upiId); setCopied(true); setTimeout(() => setCopied(false), 2000) }}
+                      className="px-3 py-2 text-xs font-semibold text-green-700 bg-green-50 border border-green-200
+                                 hover:bg-green-100 rounded-lg transition shrink-0">
+                      {copied ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => { setClickedApp('manual'); }}
+                    className="w-full mt-1 px-4 py-2.5 text-sm font-semibold text-green-700 bg-green-50
+                               border border-green-200 hover:bg-green-100 rounded-lg transition">
+                    I've paid manually — record it
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse shrink-0" />
                 <p className="text-sm text-blue-800 font-medium">
-                  {appLabel} opened — complete the payment, then come back here
+                  {clickedApp === 'manual' ? 'Complete the payment in your UPI app, then come back here'
+                    : `${appLabel} opened — complete the payment, then come back here`}
                 </p>
               </div>
+              {clickedApp !== 'manual' && (
+                <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                  <p className="text-xs text-amber-700">
+                    Getting a bank limit error? Use the <strong>manual pay</strong> option below — open your UPI app
+                    directly and pay as a normal transfer (higher limits).
+                  </p>
+                </div>
+              )}
               <div className="flex gap-2">
                 <button onClick={() => setClickedApp(null)}
                   className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-600
                              border border-gray-200 hover:border-gray-300 rounded-lg transition">
-                  Try another app
+                  {clickedApp === 'manual' ? 'Go back' : 'Try another app'}
                 </button>
                 <button
-                  onClick={() => onProceed({ amount: Number(amount), billingMonth, billingYear, appName: appLabel, note })}
+                  onClick={() => onProceed({ amount: Number(amount), billingMonth, billingYear, appName: clickedApp === 'manual' ? 'Manual UPI' : appLabel, note })}
                   className="flex-1 px-4 py-2.5 text-sm font-semibold text-white
                              bg-green-600 hover:bg-green-700 rounded-lg transition">
                   I've paid — record it
