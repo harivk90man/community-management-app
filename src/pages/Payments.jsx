@@ -79,13 +79,9 @@ function exportCSV(rows) {
   URL.revokeObjectURL(url)
 }
 
-function buildUpiUrl(appId, upiId, note) {
-  // Intentionally NOT including amount (am=) in the URL.
-  // Pre-filled amounts cause UPI apps to treat it as a merchant (P2M) payment
-  // which has much lower bank limits. Without amount, it goes through P2P flow
-  // with normal limits. The user enters the amount in the UPI app.
-  const p = `pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent('Ashirvadh Castle Rock')}&tn=${encodeURIComponent(note)}&cu=INR`
-  // Use generic upi:// intent for all apps — more reliable than app-specific schemes
+function buildUpiUrl(upiId, amount, note) {
+  // Use generic upi:// intent — launched via native startActivityForResult on Android
+  const p = `pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent('Ashirvadh Castle Rock')}&am=${amount}&tn=${encodeURIComponent(note)}&cu=INR`
   return `upi://pay?${p}`
 }
 
@@ -787,17 +783,29 @@ function UpiPayModal({ villaNumber, userName, upiId, bankDetails, defaultAmount,
     setNote(`Villa ${villaNumber} · ${MONTHS[billingMonth - 1]} ${billingYear} · ${userName}`.slice(0, 50))
   }, [villaNumber, userName, billingMonth, billingYear])
 
-  function handleAppClick(appId) {
+  async function handleAppClick(appId) {
     if (!upiId || !amount || Number(amount) <= 0) return
-    const url = buildUpiUrl(appId, upiId, note)
-    // Use location.href for native UPI deep links (more reliable on mobile, avoids popup blockers)
-    const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent)
-    if (isMobile) {
-      window.location.href = url
+    const url = buildUpiUrl(upiId, Number(amount), note)
+
+    // On native Android: use custom plugin with startActivityForResult (proper UPI intent)
+    if (window.Capacitor?.isNativePlatform()) {
+      try {
+        const { registerPlugin } = await import('@capacitor/core')
+        const UpiPay = registerPlugin('UpiPay')
+        const result = await UpiPay.pay({ uri: url })
+        console.log('UPI result:', result)
+        // result.status can be 'SUCCESS', 'FAILURE', 'SUBMITTED', or undefined
+        setClickedApp(appId)
+      } catch (e) {
+        console.warn('Native UPI failed, falling back to URL:', e)
+        window.location.href = url
+        setClickedApp(appId)
+      }
     } else {
+      // Web fallback
       window.open(url, '_blank')
+      setClickedApp(appId)
     }
-    setClickedApp(appId)
   }
 
   const appLabel = UPI_APPS.find(a => a.id === clickedApp)?.label ?? ''
@@ -963,13 +971,8 @@ function UpiPayModal({ villaNumber, userName, upiId, bankDetails, defaultAmount,
                 <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse shrink-0" />
                 <p className="text-sm text-blue-800 font-medium">
                   {clickedApp === 'manual' ? 'Complete the payment in your UPI app, then come back here'
-                    : `UPI app opened — enter ₹${fmt(Number(amount))} and complete the payment`}
+                    : `UPI app opened — complete the ₹${fmt(Number(amount))} payment, then come back`}
                 </p>
-              </div>
-              <div className="bg-white border border-blue-200 rounded-lg px-4 py-3 text-center">
-                <p className="text-xs text-gray-500">Amount to pay</p>
-                <p className="text-2xl font-black text-gray-900 mt-0.5">₹{fmt(Number(amount))}</p>
-                <p className="text-xs text-gray-400 mt-1">Enter this amount in your UPI app</p>
               </div>
               <div className="flex gap-2">
                 <button onClick={() => setClickedApp(null)}
