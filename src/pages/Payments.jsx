@@ -42,10 +42,10 @@ function makeEmptyForm(email) {
 }
 
 const UPI_APPS = [
-  { id: 'gpay',    label: 'Google Pay',    bg: 'bg-blue-50   border-blue-200   text-blue-700   hover:bg-blue-100'   },
-  { id: 'phonepe', label: 'PhonePe',       bg: 'bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100' },
-  { id: 'paytm',   label: 'Paytm',         bg: 'bg-sky-50    border-sky-200    text-sky-700    hover:bg-sky-100'    },
-  { id: 'bhim',    label: 'BHIM / Any UPI',bg: 'bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100' },
+  { id: 'gpay',    label: 'Google Pay',    pkg: 'com.google.android.apps.nbu.paisa.user', bg: 'bg-blue-50   border-blue-200   text-blue-700   hover:bg-blue-100'   },
+  { id: 'phonepe', label: 'PhonePe',       pkg: 'com.phonepe.app',                        bg: 'bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100' },
+  { id: 'paytm',   label: 'Paytm',         pkg: 'net.one97.paytm',                        bg: 'bg-sky-50    border-sky-200    text-sky-700    hover:bg-sky-100'    },
+  { id: 'bhim',    label: 'BHIM / Any UPI',pkg: null,                                      bg: 'bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100' },
 ]
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -786,15 +786,15 @@ function UpiPayModal({ villaNumber, userName, upiId, bankDetails, defaultAmount,
   async function handleAppClick(appId) {
     if (!upiId || !amount || Number(amount) <= 0) return
     const url = buildUpiUrl(upiId, Number(amount), note)
+    const app = UPI_APPS.find(a => a.id === appId)
 
-    // On native Android: use custom plugin with startActivityForResult (proper UPI intent)
+    // On native Android: use custom plugin with startActivityForResult + target package
     if (window.Capacitor?.isNativePlatform()) {
       try {
         const { registerPlugin } = await import('@capacitor/core')
         const UpiPay = registerPlugin('UpiPay')
-        const result = await UpiPay.pay({ uri: url })
+        const result = await UpiPay.pay({ uri: url, package: app?.pkg || null })
         console.log('UPI result:', result)
-        // result.status can be 'SUCCESS', 'FAILURE', 'SUBMITTED', or undefined
         setClickedApp(appId)
       } catch (e) {
         console.warn('Native UPI failed, falling back to URL:', e)
