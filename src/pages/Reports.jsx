@@ -20,6 +20,25 @@ const TABS = [
   { id: 'member',     label: 'Member Statement' },
 ]
 
+const GO_LIVE_YEAR = 2026
+const GO_LIVE_MONTH = 5 // May 2026 — no dues tracking before this
+
+function isBeforeGoLive(month, year) {
+  return year < GO_LIVE_YEAR || (year === GO_LIVE_YEAR && month < GO_LIVE_MONTH)
+}
+
+function getTrackableMonths(year) {
+  const curYear = new Date().getFullYear()
+  const curMonth = new Date().getMonth() + 1
+  const firstMonth = year === GO_LIVE_YEAR ? GO_LIVE_MONTH : (year > GO_LIVE_YEAR ? 1 : 13)
+  const lastMonth = year < curYear ? 12 : (year > curYear ? 0 : curMonth)
+  return Math.max(0, lastMonth - firstMonth + 1)
+}
+
+function getFirstTrackableMonth(year) {
+  return year === GO_LIVE_YEAR ? GO_LIVE_MONTH : (year > GO_LIVE_YEAR ? 1 : 13)
+}
+
 function fmt(n) {
   return new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 }).format(n ?? 0)
 }
@@ -134,10 +153,13 @@ function BalanceSheet({ payments, expenses, villas, assocConfig, monthlyDue, yea
   const totalExpense = yearExpenses.reduce((s, e) => s + Number(e.amount), 0)
 
   const activeVillas = villas.filter(v => v.is_active).length
-  const paidVillas   = new Set(yearPayments.map(p => p.villa_id)).size
   const curMonth     = new Date().getMonth() + 1
-  const monthsElapsed = year < new Date().getFullYear() ? 12 : curMonth
-  const expectedIncome = monthlyDue * activeVillas * monthsElapsed
+  const trackableMonths = getTrackableMonths(year)
+  const expectedIncome = monthlyDue * activeVillas * trackableMonths
+  // Count unpaid: only villas that haven't paid in any trackable month
+  const firstTrackable = getFirstTrackableMonth(year)
+  const paidVillaIds = new Set(yearPayments.filter(p => p.billing_month >= firstTrackable).map(p => p.villa_id))
+  const unpaidVillas = trackableMonths > 0 ? activeVillas - paidVillaIds.size : 0
   const receivables    = Math.max(0, expectedIncome - totalIncome)
 
   const closingBalance = opening + totalIncome - totalExpense
@@ -155,7 +177,7 @@ function BalanceSheet({ payments, expenses, villas, assocConfig, monthlyDue, yea
           <div className="divide-y divide-gray-50">
             <Row label="Opening Balance" value={opening} />
             <Row label="Maintenance Collections" value={totalIncome} bold />
-            <Row label={`Receivables (${activeVillas - paidVillas} unpaid villas)`} value={receivables} muted />
+            <Row label={`Receivables (${unpaidVillas} unpaid villas × ${trackableMonths} mo)`} value={receivables} muted />
             <Row label="Total Assets" value={opening + totalIncome + receivables} bold highlight="green" />
           </div>
         </div>
@@ -414,7 +436,9 @@ function MemberStatement({ payments, villas, monthlyDue, year, villaFilter, setV
 
   const totalPaid = villaPayments.reduce((s, p) => s + Number(p.amount), 0)
   const curMonth = new Date().getFullYear() === year ? new Date().getMonth() + 1 : 12
-  const totalDue = monthlyDue * curMonth
+  const trackableMonths = getTrackableMonths(year)
+  const firstTrackable = getFirstTrackableMonth(year)
+  const totalDue = monthlyDue * trackableMonths
   const outstanding = Math.max(0, totalDue - totalPaid)
   const paidMonths = new Set(villaPayments.map(p => p.billing_month))
 
@@ -453,17 +477,19 @@ function MemberStatement({ payments, villas, monthlyDue, year, villaFilter, setV
               const month = i + 1
               const paid = paidMonths.has(month)
               const isFuture = year === new Date().getFullYear() && month > curMonth
+              const notTracked = isBeforeGoLive(month, year) || (year > new Date().getFullYear())
               const payment = villaPayments.find(p => p.billing_month === month)
               return (
                 <div key={m} className={`rounded-lg p-2.5 text-center border ${
-                  isFuture ? 'bg-gray-50 border-gray-100 opacity-50' :
+                  notTracked || isFuture ? 'bg-gray-50 border-gray-100 opacity-50' :
                   paid ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
                 }`}>
-                  <p className={`text-xs font-semibold ${isFuture ? 'text-gray-400' : paid ? 'text-green-700' : 'text-red-600'}`}>{m}</p>
-                  {paid && payment ? (
-                    <p className="text-[10px] text-green-600 font-medium mt-0.5">₹{fmt(payment.amount)}</p>
-                  ) : isFuture ? (
+                  <p className={`text-xs font-semibold ${
+                    notTracked || isFuture ? 'text-gray-400' : paid ? 'text-green-700' : 'text-red-600'}`}>{m}</p>
+                  {notTracked || isFuture ? (
                     <span className="text-[10px] text-gray-400">—</span>
+                  ) : paid && payment ? (
+                    <p className="text-[10px] text-green-600 font-medium mt-0.5">₹{fmt(payment.amount)}</p>
                   ) : (
                     <p className="text-[10px] text-red-400 font-medium mt-0.5">Unpaid</p>
                   )}
@@ -483,8 +509,9 @@ function MemberStatement({ payments, villas, monthlyDue, year, villaFilter, setV
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {Array.from({ length: curMonth }, (_, i) => {
-                    const month = i + 1
+                  {Array.from({ length: curMonth }, (_, i) => i + 1)
+                    .filter(month => !isBeforeGoLive(month, year))
+                    .map(month => {
                     const p = villaPayments.find(x => x.billing_month === month)
                     return (
                       <tr key={month} className={`hover:bg-gray-50 transition-colors ${!p ? 'bg-red-50/30' : ''}`}>
