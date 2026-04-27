@@ -773,8 +773,7 @@ function UpiPayModal({ villaNumber, userName, upiId, bankDetails, defaultAmount,
   const [billingYear,  setBillingYear]  = useState(getCurYear)
   const [note,         setNote]         = useState('')
   const [payMethod,    setPayMethod]    = useState('upi') // 'upi', 'qr', 'bank'
-  const [copied,       setCopied]       = useState(false)
-  const [appOpened,    setAppOpened]     = useState(false)
+  const [clickedApp,   setClickedApp]   = useState(null)
 
   const duplicate = existingPayments.find(
     p => p.billing_month === billingMonth && p.billing_year === billingYear
@@ -787,20 +786,24 @@ function UpiPayModal({ villaNumber, userName, upiId, bankDetails, defaultAmount,
   const amountOk = amount && Number(amount) > 0
   const upiUrl = upiId && amountOk ? buildUpiUrl(upiId, Number(amount), note) : ''
 
-  function copyAndOpen(pkg) {
-    if (!upiId) return
-    navigator.clipboard.writeText(upiId)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 3000)
-    // Open the UPI app directly (just launch it, not a payment intent)
-    if (window.Capacitor?.isNativePlatform() && pkg) {
-      import('@capacitor/core').then(({ registerPlugin }) => {
+  async function handleAppClick(appId) {
+    if (!upiId || !amountOk) return
+    const url = buildUpiUrl(upiId, Number(amount), note)
+    const app = UPI_APPS.find(a => a.id === appId)
+
+    if (window.Capacitor?.isNativePlatform()) {
+      try {
+        const { registerPlugin } = await import('@capacitor/core')
         const UpiPay = registerPlugin('UpiPay')
-        // Open the app's main activity — no upi:// scheme, just launch
-        UpiPay.pay({ uri: `intent://#Intent;package=${pkg};end` }).catch(() => {})
-      })
+        await UpiPay.pay({ uri: url, package: app?.pkg || null })
+      } catch (e) {
+        console.warn('Native UPI failed, falling back:', e)
+        window.location.href = url
+      }
+    } else {
+      window.open(url, '_blank')
     }
-    setAppOpened(true)
+    setClickedApp(appId)
   }
 
   // Method tabs available
@@ -864,7 +867,7 @@ function UpiPayModal({ villaNumber, userName, upiId, bankDetails, defaultAmount,
             <>
               <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
                 {methods.map(m => (
-                  <button key={m.id} onClick={() => { setPayMethod(m.id); setAppOpened(false) }}
+                  <button key={m.id} onClick={() => { setPayMethod(m.id); setClickedApp(null) }}
                     className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-all ${
                       payMethod === m.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>
                     {m.label}
@@ -872,20 +875,17 @@ function UpiPayModal({ villaNumber, userName, upiId, bankDetails, defaultAmount,
                 ))}
               </div>
 
-              {/* ── UPI: Copy ID + Open App ── */}
-              {payMethod === 'upi' && !appOpened && (
+              {/* ── UPI: Deep link to app ── */}
+              {payMethod === 'upi' && !clickedApp && (
                 <div className="space-y-3">
                   <div className="bg-green-50 border border-green-100 rounded-xl p-4 text-center">
-                    <p className="text-xs text-green-600 font-medium mb-2">Pay ₹{fmt(Number(amount))} to</p>
-                    <p className="text-lg font-black text-green-800 font-mono break-all">{upiId}</p>
+                    <p className="text-xs text-green-600 font-medium mb-1">Paying to</p>
+                    <p className="text-base font-bold text-green-800 font-mono break-all">{upiId}</p>
                     <p className="text-xs text-green-500 mt-1">Ashirvadh Castle Rock</p>
                   </div>
-                  <p className="text-xs text-gray-500 text-center">
-                    Tap a button below — UPI ID will be copied, app will open. Paste the ID and pay ₹{fmt(Number(amount))}.
-                  </p>
                   <div className="grid grid-cols-2 gap-2">
                     {UPI_APPS.map(app => (
-                      <button key={app.id} onClick={() => copyAndOpen(app.pkg)}
+                      <button key={app.id} onClick={() => handleAppClick(app.id)}
                         disabled={!upiId}
                         className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl border
                                     text-sm font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed
@@ -895,35 +895,27 @@ function UpiPayModal({ villaNumber, userName, upiId, bankDetails, defaultAmount,
                       </button>
                     ))}
                   </div>
-                  {copied && (
-                    <p className="text-xs text-green-600 font-medium text-center animate-pulse">
-                      UPI ID copied to clipboard!
-                    </p>
-                  )}
                 </div>
               )}
 
-              {payMethod === 'upi' && appOpened && (
+              {payMethod === 'upi' && clickedApp && (
                 <div className="space-y-3">
                   <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
-                    <div className="flex items-center gap-2 mb-2">
+                    <div className="flex items-center gap-2">
                       <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse shrink-0" />
-                      <p className="text-sm text-blue-800 font-medium">UPI ID copied! Complete payment in your app</p>
-                    </div>
-                    <div className="bg-white rounded-lg px-4 py-3 text-center border border-blue-200">
-                      <p className="text-xs text-gray-400">Amount to pay</p>
-                      <p className="text-2xl font-black text-gray-900">₹{fmt(Number(amount))}</p>
-                      <p className="text-xs text-gray-400 mt-1">to <span className="font-mono font-semibold">{upiId}</span></p>
+                      <p className="text-sm text-blue-800 font-medium">
+                        Complete the ₹{fmt(Number(amount))} payment, then come back
+                      </p>
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={() => setAppOpened(false)}
+                    <button onClick={() => setClickedApp(null)}
                       className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-600
                                  border border-gray-200 hover:border-gray-300 rounded-lg transition">
-                      Go back
+                      Try another app
                     </button>
                     <button
-                      onClick={() => onProceed({ amount: Number(amount), billingMonth, billingYear, appName: 'UPI', note })}
+                      onClick={() => onProceed({ amount: Number(amount), billingMonth, billingYear, appName: UPI_APPS.find(a => a.id === clickedApp)?.label ?? 'UPI', note })}
                       className="flex-1 px-4 py-2.5 text-sm font-semibold text-white
                                  bg-green-600 hover:bg-green-700 rounded-lg transition">
                       I've paid — record it
