@@ -5,7 +5,7 @@ import { usePageData } from '../hooks/usePageData'
 
 // ─── constants ────────────────────────────────────────────────────────────────
 
-const PAGE_SIZE = 10
+const PAGE_SIZE = 20
 
 const EMPTY_FORM = {
   villa_number:    '',
@@ -40,6 +40,7 @@ function BoardView({ readOnly = false }) {
   const [togglingId, setTogglingId] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(null)
+  const [expandedVilla, setExpandedVilla] = useState(null)
   const [showUsers,  setShowUsers]  = useState(null) // villa id to show user management
 
   const { loading, error: fetchError, retry } = usePageData(async () => {
@@ -143,18 +144,20 @@ function BoardView({ readOnly = false }) {
 
       {/* Content */}
       {loading ? (
-        <CardSkeleton />
+        <ListSkeleton />
       ) : filtered.length === 0 ? (
         <EmptyState search={search} onClear={() => setSearch('')} onAdd={openAdd} />
       ) : (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="bg-white rounded-xl border border-gray-100 overflow-hidden divide-y divide-gray-50">
             {paged.map(v => (
-              <VillaCard
+              <VillaRow
                 key={v.id}
                 villa={v}
                 users={villaUsers[v.id] ?? []}
                 readOnly={readOnly}
+                expanded={expandedVilla === v.id}
+                onToggleExpand={() => setExpandedVilla(expandedVilla === v.id ? null : v.id)}
                 onEdit={() => openEdit(v)}
                 onToggle={() => toggleActive(v)}
                 toggling={togglingId === v.id}
@@ -166,7 +169,7 @@ function BoardView({ readOnly = false }) {
 
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="flex flex-wrap items-center justify-between gap-3 mt-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 mt-4">
               <p className="text-sm text-gray-500">
                 Page <span className="font-medium text-gray-700">{safePage}</span> of{' '}
                 <span className="font-medium text-gray-700">{totalPages}</span>
@@ -241,143 +244,112 @@ function BoardView({ readOnly = false }) {
   )
 }
 
-// ─── villa card ────────────────────────────────────────────────────────────────
+// ─── villa row (compact expandable) ───────────────────────────────────────────
 
-function VillaCard({ villa: v, users = [], readOnly, onEdit, onToggle, toggling, onDelete, onManageUsers }) {
+function VillaRow({ villa: v, users = [], readOnly, expanded, onToggleExpand, onEdit, onToggle, toggling, onDelete, onManageUsers }) {
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm
-                    hover:shadow-md hover:-translate-y-0.5 transition-all duration-200
-                    flex flex-col overflow-hidden">
-
-      {/* Top row: villa number + status indicator */}
-      <div className="flex items-start justify-between p-5 pb-3">
-        <div className="w-12 h-12 rounded-full bg-green-600 flex items-center justify-center
-                        shadow-sm shrink-0">
-          <span className="text-white font-black text-sm leading-none tracking-tight">
-            {v.villa_number}
-          </span>
+    <div>
+      {/* Compact row — always visible */}
+      <div className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors"
+        onClick={onToggleExpand}>
+        {/* Villa number badge */}
+        <div className="w-9 h-9 rounded-full bg-green-600 flex items-center justify-center shrink-0">
+          <span className="text-white font-black text-xs">{v.villa_number}</span>
         </div>
-        <span className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium mt-0.5 ${
-          v.is_active
-            ? 'bg-green-50 text-green-700'
-            : 'bg-gray-100 text-gray-500'
-        }`}>
-          <span className={`w-1.5 h-1.5 rounded-full ${v.is_active ? 'bg-green-500' : 'bg-gray-400'}`} />
-          {v.is_active ? 'Active' : 'Inactive'}
-        </span>
-      </div>
 
-      {/* Owner name + call button */}
-      <div className="px-5 pb-1 flex items-center gap-2">
-        <h3 className="font-bold text-gray-900 text-base leading-snug truncate flex-1">{v.owner_name}</h3>
-        {v.phone && (
-          <a href={`tel:${v.phone}`} onClick={e => e.stopPropagation()}
-            aria-label={`Call ${v.owner_name}`}
-            title={`Call ${v.owner_name}`}
-            className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center
-                       bg-green-50 text-green-600 hover:bg-green-100 active:bg-green-200 transition">
-            <PhoneIcon className="w-4 h-4" />
-          </a>
-        )}
-      </div>
-
-      {/* Registered users */}
-      <div className="px-5 py-3 space-y-1.5">
-        {users.length > 0 ? users.map(u => (
-          <div key={u.id} className="flex items-center gap-2 min-w-0">
-            <UserIcon className="w-3.5 h-3.5 shrink-0 text-gray-400" />
-            <span className="text-sm text-gray-600 truncate">
-              {u.name}
-              {u.is_primary && (
-                <span className="ml-1 text-xs text-green-600 font-medium">(Primary)</span>
-              )}
-            </span>
-          </div>
-        )) : (
-          <div className="flex items-center gap-2 min-w-0">
-            <UserIcon className="w-3.5 h-3.5 shrink-0 text-gray-300" />
-            <span className="text-sm text-gray-400 italic">No users registered</span>
-          </div>
-        )}
-      </div>
-
-      {/* Badges row */}
-      <div className="px-5 pb-3 flex flex-wrap gap-1.5">
-        {v.is_board_member ? (
-          <span className="px-2.5 py-0.5 text-xs font-semibold bg-green-100 text-green-700 rounded-full">
-            {v.board_role || 'Board Member'}
-          </span>
-        ) : (
-          <span className="px-2.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-500 rounded-full">
-            Resident
-          </span>
-        )}
-        {v.is_rented ? (
-          <span className="px-2.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded-full">
-            Rented
-          </span>
-        ) : (
-          <span className="px-2.5 py-0.5 text-xs font-medium bg-amber-50 text-amber-700 rounded-full">
-            Owner-occupied
-          </span>
-        )}
-        <span className="px-2.5 py-0.5 text-xs font-medium bg-purple-50 text-purple-700 rounded-full">
-          {users.length} user{users.length !== 1 ? 's' : ''}
-        </span>
-      </div>
-
-      {/* Tenant name (if rented) */}
-      {v.is_rented && v.tenant_name && (
-        <div className="px-5 pb-3 flex items-center gap-2">
-          <p className="text-xs text-gray-400 flex-1 min-w-0">
-            Tenant:{' '}
-            <span className="text-gray-600 font-medium">{v.tenant_name}</span>
-            {v.tenant_phone && (
-              <span className="text-gray-400"> · {v.tenant_phone}</span>
+        {/* Owner + meta */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-semibold text-gray-900 truncate">{v.owner_name}</p>
+            {v.is_board_member && (
+              <span className="hidden sm:inline px-1.5 py-0.5 text-[10px] font-semibold bg-green-100 text-green-700 rounded-full shrink-0">
+                {v.board_role || 'Board'}
+              </span>
             )}
-          </p>
-          {v.tenant_phone && (
-            <a href={`tel:${v.tenant_phone}`} onClick={e => e.stopPropagation()}
-              aria-label={`Call tenant ${v.tenant_name}`}
-              title={`Call tenant ${v.tenant_name}`}
-              className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center
-                         bg-blue-50 text-blue-600 hover:bg-blue-100 active:bg-blue-200 transition">
+          </div>
+          <div className="flex items-center gap-2 text-xs text-gray-400">
+            <span>{users.length} user{users.length !== 1 ? 's' : ''}</span>
+            {v.is_rented && <span className="text-blue-500">Rented</span>}
+          </div>
+        </div>
+
+        {/* Status + phone + chevron */}
+        <div className="flex items-center gap-2 shrink-0">
+          <span className={`w-2 h-2 rounded-full ${v.is_active ? 'bg-green-500' : 'bg-gray-300'}`} />
+          {v.phone && (
+            <a href={`tel:${v.phone}`} onClick={e => e.stopPropagation()}
+              aria-label={`Call ${v.owner_name}`}
+              className="w-8 h-8 rounded-full flex items-center justify-center
+                         bg-green-50 text-green-600 hover:bg-green-100 active:bg-green-200 transition">
               <PhoneIcon className="w-3.5 h-3.5" />
             </a>
           )}
+          <ChevronDownIcon className={`w-4 h-4 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
         </div>
-      )}
+      </div>
 
+      {/* Expanded details */}
+      {expanded && (
+        <div className="px-4 pb-4 pt-1 bg-gray-50/50">
+          {/* Details grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-2 text-xs mb-3 pl-12">
+            {v.phone && <div><span className="text-gray-400">Phone:</span> <span className="text-gray-700">{v.phone}</span></div>}
+            {v.email && <div><span className="text-gray-400">Email:</span> <span className="text-gray-700">{v.email}</span></div>}
+            <div><span className="text-gray-400">Status:</span> <span className={v.is_active ? 'text-green-600 font-medium' : 'text-gray-500'}>{v.is_active ? 'Active' : 'Inactive'}</span></div>
+            <div><span className="text-gray-400">Type:</span> <span className="text-gray-700">{v.is_rented ? 'Rented' : 'Owner-occupied'}</span></div>
+            {v.is_board_member && <div><span className="text-gray-400">Role:</span> <span className="text-green-700 font-medium">{v.board_role || 'Board Member'}</span></div>}
+            {v.is_rented && v.tenant_name && (
+              <div className="col-span-2">
+                <span className="text-gray-400">Tenant:</span>{' '}
+                <span className="text-gray-700">{v.tenant_name}</span>
+                {v.tenant_phone && (
+                  <>
+                    <span className="text-gray-400"> · </span>
+                    <a href={`tel:${v.tenant_phone}`} className="text-blue-600 hover:underline">{v.tenant_phone}</a>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
 
-      {/* Push actions to bottom */}
-      <div className="flex-1" />
+          {/* Users list */}
+          <div className="pl-12 mb-3">
+            <p className="text-xs text-gray-400 font-medium mb-1">Users</p>
+            {users.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {users.map(u => (
+                  <span key={u.id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-white border border-gray-200 rounded-full text-xs text-gray-700">
+                    <UserIcon className="w-3 h-3 text-gray-400" />
+                    {u.name}
+                    {u.is_primary && <span className="text-green-600 text-[10px] font-medium">(P)</span>}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-gray-400 italic">No users registered</p>
+            )}
+          </div>
 
-      {/* Action buttons — board only */}
-      {!readOnly && (
-        <div className="grid grid-cols-4 gap-2 px-5 py-4 border-t border-gray-50">
-          <button onClick={onEdit}
-            className="py-2 text-xs font-semibold text-gray-600 bg-gray-50
-                       hover:bg-gray-100 rounded-lg transition">
-            Edit
-          </button>
-          <button onClick={onManageUsers}
-            className="py-2 text-xs font-semibold text-purple-600 bg-purple-50
-                       hover:bg-purple-100 rounded-lg transition">
-            Users
-          </button>
-          <button onClick={onToggle} disabled={toggling}
-            className={`py-2 text-xs font-semibold rounded-lg transition disabled:opacity-50 ${
-              v.is_active
-                ? 'text-amber-600 bg-amber-50 hover:bg-amber-100'
-                : 'text-green-600 bg-green-50 hover:bg-green-100'
-            }`}>
-            {toggling ? '…' : v.is_active ? 'Deactivate' : 'Activate'}
-          </button>
-          <button onClick={onDelete}
-            className="py-2 text-xs font-semibold text-red-600 bg-red-50
-                       hover:bg-red-100 rounded-lg transition">
-            Delete
-          </button>
+          {/* Actions — board only */}
+          {!readOnly && (
+            <div className="flex items-center gap-2 pl-12">
+              <button onClick={onEdit}
+                className="px-3 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200
+                           hover:bg-gray-50 rounded-lg transition">Edit</button>
+              <button onClick={onManageUsers}
+                className="px-3 py-1.5 text-xs font-semibold text-purple-600 bg-white border border-purple-200
+                           hover:bg-purple-50 rounded-lg transition">Users</button>
+              <button onClick={onToggle} disabled={toggling}
+                className={`px-3 py-1.5 text-xs font-semibold bg-white border rounded-lg transition disabled:opacity-50 ${
+                  v.is_active
+                    ? 'text-amber-600 border-amber-200 hover:bg-amber-50'
+                    : 'text-green-600 border-green-200 hover:bg-green-50'
+                }`}>{toggling ? '…' : v.is_active ? 'Deactivate' : 'Activate'}</button>
+              <button onClick={onDelete}
+                className="px-3 py-1.5 text-xs font-semibold text-red-600 bg-white border border-red-200
+                           hover:bg-red-50 rounded-lg transition">Delete</button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -927,28 +899,18 @@ function Badge({ color, label }) {
   return <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${colors[color]}`}>{label}</span>
 }
 
-function CardSkeleton() {
+function ListSkeleton() {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-      {Array.from({ length: 6 }).map((_, i) => (
-        <div key={i} className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3 animate-pulse">
-          <div className="flex items-start justify-between">
-            <div className="w-12 h-12 rounded-full bg-gray-100" />
-            <div className="h-5 w-16 bg-gray-100 rounded-full" />
+    <div className="bg-white rounded-xl border border-gray-100 overflow-hidden divide-y divide-gray-50">
+      {Array.from({ length: 8 }).map((_, i) => (
+        <div key={i} className="flex items-center gap-3 px-4 py-3 animate-pulse">
+          <div className="w-9 h-9 rounded-full bg-gray-100 shrink-0" />
+          <div className="flex-1 space-y-1.5">
+            <div className="h-3.5 bg-gray-100 rounded w-32" />
+            <div className="h-3 bg-gray-100 rounded w-20" />
           </div>
-          <div className="h-4 w-3/4 bg-gray-100 rounded" />
-          <div className="space-y-2">
-            <div className="h-3.5 bg-gray-100 rounded" />
-            <div className="h-3.5 bg-gray-100 rounded w-3/4" />
-          </div>
-          <div className="flex gap-1.5">
-            <div className="h-5 w-20 bg-gray-100 rounded-full" />
-            <div className="h-5 w-24 bg-gray-100 rounded-full" />
-          </div>
-          <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-50">
-            <div className="h-8 bg-gray-100 rounded-lg" />
-            <div className="h-8 bg-gray-100 rounded-lg" />
-          </div>
+          <div className="w-2 h-2 rounded-full bg-gray-100" />
+          <div className="w-4 h-4 bg-gray-100 rounded" />
         </div>
       ))}
     </div>
@@ -1017,6 +979,10 @@ function PhoneIcon({ className }) {
   return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
       d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
+}
+function ChevronDownIcon({ className }) {
+  return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
 }
 function ChevronLeftIcon({ className }) {
   return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
