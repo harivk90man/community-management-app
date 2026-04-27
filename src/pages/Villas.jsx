@@ -361,7 +361,15 @@ function VillaRow({ villa: v, users = [], readOnly, expanded, onToggleExpand, on
 function VillaFormModal({ editing, onSaved, onClose }) {
   const isEdit = Boolean(editing)
 
-  const [form, setForm]     = useState(isEdit ? { ...editing } : { ...EMPTY_FORM })
+  const [form, setForm]     = useState(isEdit ? {
+    ...EMPTY_FORM,
+    ...editing,
+    email:        editing.email        ?? '',
+    phone:        editing.phone        ?? '',
+    board_role:   editing.board_role   ?? '',
+    tenant_name:  editing.tenant_name  ?? '',
+    tenant_phone: editing.tenant_phone ?? '',
+  } : { ...EMPTY_FORM })
   const [saving, setSaving] = useState(false)
   const [error, setError]   = useState('')
 
