@@ -124,7 +124,7 @@ export default function Reports() {
           assocConfig={assocConfig} monthlyDue={monthlyDue} year={yearFilter} />
       )}
       {tab === 'income-exp' && (
-        <IncomeExpenditure payments={payments} expenses={expenses} year={yearFilter} />
+        <IncomeExpenditure payments={payments} expenses={expenses} year={yearFilter} openingBalance={Number(assocConfig.opening_balance ?? 0)} />
       )}
       {tab === 'monthly' && (
         <MonthlyCollection payments={payments} expenses={expenses} year={yearFilter} />
@@ -213,7 +213,7 @@ function BalanceSheet({ payments, expenses, villas, assocConfig, monthlyDue, yea
 
 // ─── 2. Income & Expenditure ──────────────────────────────────────────────────
 
-function IncomeExpenditure({ payments, expenses, year }) {
+function IncomeExpenditure({ payments, expenses, year, openingBalance }) {
   const yearPayments = payments.filter(p => p.billing_year === year)
   const yearExpenses = expenses.filter(e => e.expense_date && new Date(e.expense_date + 'T00:00:00').getFullYear() === year)
 
@@ -226,6 +226,9 @@ function IncomeExpenditure({ payments, expenses, year }) {
   const expByCat = {}
   yearExpenses.forEach(e => { expByCat[e.category || 'Other'] = (expByCat[e.category || 'Other'] || 0) + Number(e.amount) })
   const totalExpense = yearExpenses.reduce((s, e) => s + Number(e.amount), 0)
+
+  const surplus = totalIncome - totalExpense
+  const fundBalance = openingBalance + surplus
 
   return (
     <div className="space-y-6">
@@ -267,10 +270,25 @@ function IncomeExpenditure({ payments, expenses, year }) {
       </div>
 
       {/* Surplus / Deficit */}
-      <div className={`rounded-xl p-5 text-center ${totalIncome >= totalExpense ? 'bg-blue-50 border border-blue-200' : 'bg-orange-50 border border-orange-200'}`}>
-        <p className="text-sm text-gray-500 font-medium">{totalIncome >= totalExpense ? 'Surplus' : 'Deficit'}</p>
-        <p className={`text-3xl font-black mt-1 ${totalIncome >= totalExpense ? 'text-blue-700' : 'text-orange-700'}`}>
-          ₹{fmt(Math.abs(totalIncome - totalExpense))}
+      <div className={`rounded-xl p-5 text-center ${surplus >= 0 ? 'bg-blue-50 border border-blue-200' : 'bg-orange-50 border border-orange-200'}`}>
+        <p className="text-sm text-gray-500 font-medium">{surplus >= 0 ? 'Surplus' : 'Deficit'}</p>
+        <p className={`text-3xl font-black mt-1 ${surplus >= 0 ? 'text-blue-700' : 'text-orange-700'}`}>
+          ₹{fmt(Math.abs(surplus))}
+        </p>
+        <p className="text-xs text-gray-400 mt-1">Income ₹{fmt(totalIncome)} − Expenses ₹{fmt(totalExpense)}</p>
+      </div>
+
+      {/* Fund Balance */}
+      <div className={`rounded-xl p-5 text-center ${fundBalance >= 0 ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+        <p className="text-sm text-gray-500 font-medium">Fund Balance</p>
+        <p className={`text-3xl font-black mt-1 ${fundBalance >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+          ₹{fmt(fundBalance)}
+        </p>
+        <p className="text-xs text-gray-400 mt-2">
+          Opening Balance (₹{fmt(openingBalance)}) + {surplus >= 0 ? 'Surplus' : 'Deficit'} ({surplus >= 0 ? '' : '−'}₹{fmt(Math.abs(surplus))}) = ₹{fmt(fundBalance)}
+        </p>
+        <p className="text-xs text-gray-400 mt-1">
+          This is the total fund available with the association as of {year}, including the balance carried forward from before.
         </p>
       </div>
     </div>
