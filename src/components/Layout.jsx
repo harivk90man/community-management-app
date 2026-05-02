@@ -16,13 +16,13 @@ const NAV_ITEMS = [
   { to: '/documents',      label: 'Documents',          icon: DocumentIcon },
   { to: '/vendors',        label: 'Vendors',            icon: BriefcaseIcon },
   { to: '/polls',          label: 'Polls',              icon: ChartIcon },
+  { to: '/expenses',      label: 'Expenses',           icon: ReceiptIcon },
   { to: '/analytics',     label: 'Analytics',          icon: AnalyticsIcon },
   { to: '/reports',       label: 'Reports',            icon: ReportsIcon },
   { to: '/calendar',      label: 'Calendar',           icon: CalendarIcon },
 ]
 
 const BOARD_ONLY_ITEMS = [
-  { to: '/expenses',    label: 'Expenses',    icon: ReceiptIcon },
   { to: '/dues-config', label: 'Dues Config', icon: CogIcon },
 ]
 

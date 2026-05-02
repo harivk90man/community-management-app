@@ -27,17 +27,10 @@ const EMPTY_FORM = { title: '', amount: '', category: 'Maintenance', expense_dat
 
 export default function Expenses() {
   const { role, user } = useAuth()
-  if (role !== 'board') {
-    return (
-      <div className="p-6 py-24 text-center">
-        <p className="text-gray-500 font-medium">This page is for board members only.</p>
-      </div>
-    )
-  }
-  return <BoardView user={user} />
+  return <ExpenseList user={user} isBoard={role === 'board'} />
 }
 
-function BoardView({ user }) {
+function ExpenseList({ user, isBoard }) {
   const [expenses, setExpenses]   = useState([])
   const [showForm, setShowForm]   = useState(false)
   const [editing, setEditing]     = useState(null)
@@ -80,11 +73,13 @@ function BoardView({ user }) {
           <h1 className="text-xl font-bold text-gray-900">Expenses</h1>
           <p className="text-sm text-gray-500 mt-0.5">{expenses.length} records</p>
         </div>
-        <button onClick={() => { setEditing(null); setShowForm(true) }}
-          className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700
-                     text-white text-sm font-semibold rounded-lg transition">
-          <PlusIcon className="w-4 h-4" /> Add Expense
-        </button>
+        {isBoard && (
+          <button onClick={() => { setEditing(null); setShowForm(true) }}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700
+                       text-white text-sm font-semibold rounded-lg transition">
+            <PlusIcon className="w-4 h-4" /> Add Expense
+          </button>
+        )}
       </div>
 
       {fetchError && <FetchError message={fetchError} onRetry={retry} />}
@@ -107,7 +102,7 @@ function BoardView({ user }) {
 
       {/* Table */}
       {loading ? <TableSkeleton /> : filtered.length === 0 ? (
-        <EmptyState message="No expenses found." onAdd={() => { setEditing(null); setShowForm(true) }} />
+        <EmptyState message="No expenses found." onAdd={isBoard ? () => { setEditing(null); setShowForm(true) } : null} />
       ) : (
         <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
           <div className="overflow-x-auto">
@@ -115,7 +110,7 @@ function BoardView({ user }) {
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
                   <Th>Title</Th><Th>Category</Th><Th>Amount</Th><Th>Date</Th><Th>Added By</Th>
-                  <Th align="right">Actions</Th>
+                  {isBoard && <Th align="right">Actions</Th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -131,18 +126,20 @@ function BoardView({ user }) {
                     <td className="px-4 py-3 font-semibold text-gray-900">₹{fmt(e.amount)}</td>
                     <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{fmtDate(e.expense_date)}</td>
                     <td className="px-4 py-3 text-gray-500 text-xs">{e.added_by || '—'}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-2">
-                        <button onClick={() => { setEditing(e); setShowForm(true) }}
-                          className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200
-                                     hover:border-gray-300 rounded-lg transition">Edit</button>
-                        <button onClick={() => setConfirmDel(e)} disabled={deletingId === e.id}
-                          className="px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200
-                                     hover:bg-red-50 rounded-lg transition disabled:opacity-50">
-                          {deletingId === e.id ? '…' : 'Delete'}
-                        </button>
-                      </div>
-                    </td>
+                    {isBoard && (
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-2">
+                          <button onClick={() => { setEditing(e); setShowForm(true) }}
+                            className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200
+                                       hover:border-gray-300 rounded-lg transition">Edit</button>
+                          <button onClick={() => setConfirmDel(e)} disabled={deletingId === e.id}
+                            className="px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200
+                                       hover:bg-red-50 rounded-lg transition disabled:opacity-50">
+                            {deletingId === e.id ? '…' : 'Delete'}
+                          </button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -152,7 +149,7 @@ function BoardView({ user }) {
                     {filterCat ? `${filterCat} Total` : 'Total'}
                   </td>
                   <td className="px-4 py-3 font-bold text-gray-900">₹{fmt(total)}</td>
-                  <td colSpan={3} />
+                  <td colSpan={isBoard ? 3 : 2} />
                 </tr>
               </tfoot>
             </table>
