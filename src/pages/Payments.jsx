@@ -62,19 +62,6 @@ function csvEscape(v) {
     ? `"${s.replace(/"/g, '""')}"` : s
 }
 
-function exportCSV(rows) {
-  const headers = ['Villa','Owner','Amount','Mode','Month','Year','Paid On','Remarks','Recorded By','Status']
-  const lines = [
-    headers.join(','),
-    ...rows.map(r => [
-      r.villas?.villa_number, r.villas?.owner_name, r.amount, r.mode,
-      MONTHS[r.billing_month - 1], r.billing_year, r.paid_on,
-      r.remarks, r.recorded_by, r.status ?? 'approved',
-    ].map(csvEscape).join(',')),
-  ]
-  exportFile(`payments_${getCurYear()}_${getCurMonth()}.csv`, lines.join('\n'))
-}
-
 function exportDuesStatus(villas, payments, filterMonth, filterYear) {
   const monthName = MONTHS[filterMonth - 1]
   const paidMap = {}
@@ -88,8 +75,10 @@ function exportDuesStatus(villas, payments, filterMonth, filterYear) {
       }
     })
 
+  const sorted = [...villas].sort((a, b) => Number(a.villa_number) - Number(b.villa_number))
+
   const headers = ['Villa', 'Owner', 'Status', 'Amount Paid', 'Mode', 'Paid On']
-  const rows = villas.map(v => {
+  const rows = sorted.map(v => {
     const paid = paidMap[v.id]
     return [
       v.villa_number,
@@ -176,7 +165,7 @@ function BoardView({ user, myVilla, villaUser }) {
     if (villasRes.error)   throw villasRes.error
     setPayments(paymentsRes.data ?? [])
     setPendingPayments(pendingRes.data ?? [])
-    setVillas(villasRes.data ?? [])
+    setVillas((villasRes.data ?? []).sort((a, b) => Number(a.villa_number) - Number(b.villa_number)))
     if (assocRes.data) {
       setDueDay(assocRes.data.due_day ?? 10); setUpiId(assocRes.data.upi_id ?? '')
       if (assocRes.data.bank_account_number) setBankDetails({ name: assocRes.data.bank_account_name, number: assocRes.data.bank_account_number, ifsc: assocRes.data.bank_ifsc, bank: assocRes.data.bank_name })
@@ -313,15 +302,10 @@ function BoardView({ user, myVilla, villaUser }) {
                        disabled:bg-gray-400 text-white text-sm font-bold rounded-lg transition">
             <PayIcon className="w-4 h-4" /> Pay My Dues
           </button>
-          <button onClick={() => exportCSV(filtered)}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600
-                       border border-gray-200 hover:border-gray-300 hover:bg-gray-50 rounded-lg transition">
-            <DownloadIcon className="w-4 h-4" /> Export CSV
-          </button>
           <button onClick={() => exportDuesStatus(villas, payments, filterMonth, filterYear)}
             className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600
                        border border-gray-200 hover:border-gray-300 hover:bg-gray-50 rounded-lg transition">
-            <DownloadIcon className="w-4 h-4" /> Dues Status
+            <DownloadIcon className="w-4 h-4" /> Export
           </button>
           <button onClick={() => { setEditing(null); setShowForm(true) }}
             className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700
