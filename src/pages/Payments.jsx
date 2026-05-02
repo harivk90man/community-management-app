@@ -105,7 +105,7 @@ function exportDuesStatus(villas, payments, filterMonth, filterYear) {
     ...rows,
   ]
 
-  exportFile(`dues_status_${monthName}_${filterYear}.csv`, lines.join('\n'))
+  exportFile(`Ashirvadh_Maintenance_Collection_Report_${monthName}_${filterYear}.csv`, lines.join('\n'))
 }
 
 function buildUpiUrl(upiId, amount, note) {
