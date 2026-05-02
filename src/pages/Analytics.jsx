@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import { usePageData } from '../hooks/usePageData'
+import { exportFile } from '../utils/exportFile'
 import FetchError from '../components/FetchError'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -200,14 +201,7 @@ function exportReport(payments, expenses, villas, yearFilter) {
     ...filtE.map(e => [e.amount, e.category, e.expense_date].map(csvSafe).join(',')),
   ]
 
-  const blob = new Blob([csvLines.join('\n')], { type: 'text/csv' })
-  const url = URL.createObjectURL(blob)
-  const a = Object.assign(document.createElement('a'), {
-    href: url,
-    download: `ashirvadh_financial_report_${period.replace(/\s/g, '_')}.csv`,
-  })
-  a.click()
-  URL.revokeObjectURL(url)
+  exportFile(`ashirvadh_financial_report_${period.replace(/\s/g, '_')}.csv`, csvLines.join('\n'))
 }
 
 // ─── year filter ──────────────────────────────────────────────────────────────

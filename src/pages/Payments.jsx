@@ -3,6 +3,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import { usePageData } from '../hooks/usePageData'
+import { exportFile } from '../utils/exportFile'
 import FetchError from '../components/FetchError'
 
 // ─── constants ────────────────────────────────────────────────────────────────
@@ -71,13 +72,49 @@ function exportCSV(rows) {
       r.remarks, r.recorded_by, r.status ?? 'approved',
     ].map(csvEscape).join(',')),
   ]
-  const blob = new Blob([lines.join('\n')], { type: 'text/csv' })
-  const url  = URL.createObjectURL(blob)
-  const a    = Object.assign(document.createElement('a'), {
-    href: url, download: `payments_${getCurYear()}_${getCurMonth()}.csv`,
+  exportFile(`payments_${getCurYear()}_${getCurMonth()}.csv`, lines.join('\n'))
+}
+
+function exportDuesStatus(villas, payments, filterMonth, filterYear) {
+  const monthName = MONTHS[filterMonth - 1]
+  const paidMap = {}
+  payments
+    .filter(p => p.billing_month === filterMonth && p.billing_year === filterYear)
+    .forEach(p => {
+      paidMap[p.villa_id] = {
+        amount: Number(p.amount),
+        mode: p.mode,
+        paid_on: p.paid_on,
+      }
+    })
+
+  const headers = ['Villa', 'Owner', 'Status', 'Amount Paid', 'Mode', 'Paid On']
+  const rows = villas.map(v => {
+    const paid = paidMap[v.id]
+    return [
+      v.villa_number,
+      v.owner_name,
+      paid ? 'Paid' : 'Not Paid',
+      paid ? paid.amount : '',
+      paid ? paid.mode : '',
+      paid ? paid.paid_on : '',
+    ].map(csvEscape).join(',')
   })
-  a.click()
-  URL.revokeObjectURL(url)
+
+  const paidCount = villas.filter(v => paidMap[v.id]).length
+  const unpaidCount = villas.length - paidCount
+
+  const lines = [
+    `Ashirvadh Castle Rock - Dues Status Report`,
+    `Period: ${monthName} ${filterYear}`,
+    `Generated: ${new Date().toLocaleDateString('en-IN')}`,
+    `Total Villas: ${villas.length} | Paid: ${paidCount} | Not Paid: ${unpaidCount}`,
+    '',
+    headers.join(','),
+    ...rows,
+  ]
+
+  exportFile(`dues_status_${monthName}_${filterYear}.csv`, lines.join('\n'))
 }
 
 function buildUpiUrl(upiId, amount, note) {
@@ -280,6 +317,11 @@ function BoardView({ user, myVilla, villaUser }) {
             className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600
                        border border-gray-200 hover:border-gray-300 hover:bg-gray-50 rounded-lg transition">
             <DownloadIcon className="w-4 h-4" /> Export CSV
+          </button>
+          <button onClick={() => exportDuesStatus(villas, payments, filterMonth, filterYear)}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600
+                       border border-gray-200 hover:border-gray-300 hover:bg-gray-50 rounded-lg transition">
+            <DownloadIcon className="w-4 h-4" /> Dues Status
           </button>
           <button onClick={() => { setEditing(null); setShowForm(true) }}
             className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700

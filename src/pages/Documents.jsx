@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import { usePageData } from '../hooks/usePageData'
+import { exportBlob } from '../utils/exportFile'
 import FetchError from '../components/FetchError'
 
 const CATEGORIES = ['Certificate', 'Bylaw', 'Minutes', 'NOC', 'Circular', 'Other']
@@ -241,14 +242,8 @@ function DocumentViewer({ doc, onClose }) {
                 try {
                   const res = await fetch(url)
                   const blob = await res.blob()
-                  const blobUrl = URL.createObjectURL(blob)
-                  const a = document.createElement('a')
-                  a.href = blobUrl
-                  a.download = doc.file_name ?? doc.title ?? 'download'
-                  a.click()
-                  URL.revokeObjectURL(blobUrl)
+                  await exportBlob(doc.file_name ?? doc.title ?? 'download', blob)
                 } catch {
-                  // Fallback: open in new tab
                   window.open(url, '_blank')
                 }
               }}
@@ -303,12 +298,7 @@ function DocumentViewer({ doc, onClose }) {
                 try {
                   const res = await fetch(url)
                   const blob = await res.blob()
-                  const blobUrl = URL.createObjectURL(blob)
-                  const a = document.createElement('a')
-                  a.href = blobUrl
-                  a.download = doc.file_name ?? doc.title ?? 'download'
-                  a.click()
-                  URL.revokeObjectURL(blobUrl)
+                  await exportBlob(doc.file_name ?? doc.title ?? 'download', blob)
                 } catch {
                   window.open(url, '_blank')
                 }
