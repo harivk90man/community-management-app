@@ -72,12 +72,13 @@ function exportDuesStatus(villas, payments, filterMonth, filterYear) {
         amount: Number(p.amount),
         mode: p.mode,
         paid_on: p.paid_on,
+        remarks: p.remarks,
       }
     })
 
   const sorted = [...villas].sort((a, b) => Number(a.villa_number) - Number(b.villa_number))
 
-  const headers = ['Villa', 'Owner', 'Status', 'Amount Paid', 'Mode', 'Paid On']
+  const headers = ['Villa', 'Owner', 'Status', 'Amount Paid', 'Mode', 'Paid On', 'Remarks']
   const rows = sorted.map(v => {
     const paid = paidMap[v.id]
     return [
@@ -87,6 +88,7 @@ function exportDuesStatus(villas, payments, filterMonth, filterYear) {
       paid ? paid.amount : '',
       paid ? paid.mode : '',
       paid ? paid.paid_on : '',
+      paid ? (paid.remarks ?? '') : '',
     ].map(csvEscape).join(',')
   })
 
